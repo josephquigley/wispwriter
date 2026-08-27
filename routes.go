@@ -108,9 +108,9 @@ func InitRoutes(apper Apper, r *mux.Router) *mux.Router {
 	me.HandleFunc("/c/{collection}/stats", handler.User(viewStats)).Methods("GET")
 	me.HandleFunc("/c/{collection}/posts", handler.User(viewCollectionPosts)).Methods("GET")
 	me.HandleFunc("/c/{collection}/subscribers", handler.User(handleViewSubscribers)).Methods("GET")
-	me.Path("/c/{collection}/pinned").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(viewPinnedPosts))).Methods("GET")
-	me.Path("/c/{collection}/pinned/{post}/{action}").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(handlePinnedPostAction))).Methods("POST")
-	me.Path("/delete").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(handleUserDelete))).Methods("POST")
+	me.Path("/c/{collection}/pinned").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrfOptions(apper.App())...)(handler.User(viewPinnedPosts))).Methods("GET")
+	me.Path("/c/{collection}/pinned/{post}/{action}").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrfOptions(apper.App())...)(handler.User(handlePinnedPostAction))).Methods("POST")
+	me.Path("/delete").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrfOptions(apper.App())...)(handler.User(handleUserDelete))).Methods("POST")
 	me.HandleFunc("/posts", handler.Redirect("/me/posts/", UserLevelUser)).Methods("GET")
 	me.HandleFunc("/posts/", handler.User(viewArticles)).Methods("GET")
 	me.HandleFunc("/posts/export.csv", handler.Download(viewExportPosts, UserLevelUser)).Methods("GET")
@@ -118,9 +118,9 @@ func InitRoutes(apper Apper, r *mux.Router) *mux.Router {
 	me.HandleFunc("/posts/export.json", handler.Download(viewExportPosts, UserLevelUser)).Methods("GET")
 	me.HandleFunc("/export", handler.User(viewExportOptions)).Methods("GET")
 	me.HandleFunc("/export.json", handler.Download(viewExportFull, UserLevelUser)).Methods("GET")
-	me.Path("/import").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(viewImport))).Methods("GET")
-	me.Path("/settings").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(viewSettings))).Methods("GET")
-	me.Path("/invites").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(handleViewUserInvites))).Methods("GET")
+	me.Path("/import").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrfOptions(apper.App())...)(handler.User(viewImport))).Methods("GET")
+	me.Path("/settings").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrfOptions(apper.App())...)(handler.User(viewSettings))).Methods("GET")
+	me.Path("/invites").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrfOptions(apper.App())...)(handler.User(handleViewUserInvites))).Methods("GET")
 	me.HandleFunc("/logout", handler.Web(viewLogout, UserLevelNone)).Methods("GET")
 
 	write.HandleFunc("/api/me", handler.All(viewMeAPI)).Methods("GET")
@@ -129,12 +129,12 @@ func InitRoutes(apper Apper, r *mux.Router) *mux.Router {
 	apiMe.HandleFunc("/posts", handler.UserWebAPI(viewMyPostsAPI)).Methods("GET")
 	apiMe.HandleFunc("/collections", handler.UserAPI(viewMyCollectionsAPI)).Methods("GET")
 	apiMe.HandleFunc("/password", handler.All(updatePassphrase)).Methods("POST")
-	apiMe.Path("/self").Handler(csrfProtectForm(apper.App().keys.CSRFKey, handler.All(updateSettings))).Methods("POST")
-	apiMe.Path("/invites").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(handleCreateUserInvite))).Methods("POST")
-	apiMe.Path("/import").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(handleImport))).Methods("POST")
-	apiMe.Path("/images").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(handleUploadImage))).Methods("POST")
-	apiMe.Path("/images/{image}").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(handleDeleteImage))).Methods("DELETE")
-	apiMe.Path("/oauth/remove").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(removeOauth))).Methods("POST")
+	apiMe.Path("/self").Handler(csrfProtectForm(apper.App(), handler.All(updateSettings))).Methods("POST")
+	apiMe.Path("/invites").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrfOptions(apper.App())...)(handler.User(handleCreateUserInvite))).Methods("POST")
+	apiMe.Path("/import").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrfOptions(apper.App())...)(handler.User(handleImport))).Methods("POST")
+	apiMe.Path("/images").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrfOptions(apper.App())...)(handler.User(handleUploadImage))).Methods("POST")
+	apiMe.Path("/images/{image}").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrfOptions(apper.App())...)(handler.User(handleDeleteImage))).Methods("DELETE")
+	apiMe.Path("/oauth/remove").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrfOptions(apper.App())...)(handler.User(removeOauth))).Methods("POST")
 
 	// Sign up validation
 	write.HandleFunc("/api/alias", handler.All(handleUsernameCheck)).Methods("POST")
@@ -198,7 +198,7 @@ func InitRoutes(apper Apper, r *mux.Router) *mux.Router {
 	write.HandleFunc("/admin/updates", handler.Admin(handleViewAdminUpdates)).Methods("GET")
 
 	// Handle special pages first
-	write.Path("/reset").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.Web(viewResetPassword, UserLevelNoneRequired)))
+	write.Path("/reset").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrfOptions(apper.App())...)(handler.Web(viewResetPassword, UserLevelNoneRequired)))
 	write.HandleFunc("/login", handler.Web(viewLogin, UserLevelNoneRequired))
 	write.HandleFunc("/signup", handler.Web(handleViewLanding, UserLevelNoneRequired))
 	write.HandleFunc("/invite/{code:[a-zA-Z0-9]+}", handler.Web(handleViewInvite, UserLevelOptional)).Methods("GET")
@@ -209,13 +209,13 @@ func InitRoutes(apper Apper, r *mux.Router) *mux.Router {
 	draftEditPrefix := ""
 	if apper.App().cfg.App.SingleUser {
 		draftEditPrefix = "/d"
-		write.Path("/me/new").Handler(csrfProtect(apper.App().keys.CSRFKey, handler.Web(handleViewPad, UserLevelUser))).Methods("GET")
+		write.Path("/me/new").Handler(csrfProtect(apper.App(), handler.Web(handleViewPad, UserLevelUser))).Methods("GET")
 	} else {
-		write.Path("/new").Handler(csrfProtect(apper.App().keys.CSRFKey, handler.Web(handleViewPad, UserLevelUser))).Methods("GET")
+		write.Path("/new").Handler(csrfProtect(apper.App(), handler.Web(handleViewPad, UserLevelUser))).Methods("GET")
 	}
 
 	// All the existing stuff
-	write.Path(draftEditPrefix + "/{action}/edit").Handler(csrfProtect(apper.App().keys.CSRFKey, handler.Web(handleViewPad, UserLevelUser))).Methods("GET")
+	write.Path(draftEditPrefix + "/{action}/edit").Handler(csrfProtect(apper.App(), handler.Web(handleViewPad, UserLevelUser))).Methods("GET")
 	write.HandleFunc(draftEditPrefix+"/{action}/meta", handler.Web(handleViewMeta, UserLevelUser)).Methods("GET")
 	// Collections
 	if apper.App().cfg.App.SingleUser {
@@ -237,12 +237,30 @@ func InitRoutes(apper Apper, r *mux.Router) *mux.Router {
 // session cookies and are therefore not CSRF-exploitable.
 // csrfProtect wraps a handler so gorilla/csrf issues a token for it. The
 // editor needs one to call the authenticated image endpoints.
-func csrfProtect(key []byte, next http.Handler) http.Handler {
-	return csrf.Protect(key, csrf.Path("/"))(next)
+// csrfOptions returns the CSRF middleware options for this instance.
+//
+// gorilla/csrf treats every request as if it arrived over TLS and enforces
+// a same-origin Referer whose scheme is https. An instance served over
+// plain HTTP therefore rejects every protected request, because browsers
+// send an http:// Referer -- which breaks saving settings, importing
+// posts, uploading images and reordering pinned posts. Relax the check
+// only when the configured site URL is itself http://; behind a proxy that
+// terminates TLS the browser still sends an https Referer, so the strict
+// check keeps applying there.
+func csrfOptions(app *App) []csrf.Option {
+	opts := []csrf.Option{csrf.Path("/")}
+	if strings.HasPrefix(strings.ToLower(app.cfg.App.Host), "http://") {
+		opts = append(opts, csrf.Secure(false))
+	}
+	return opts
 }
 
-func csrfProtectForm(key []byte, next http.Handler) http.Handler {
-	protected := csrf.Protect(key, csrf.Path("/"))(next)
+func csrfProtect(app *App, next http.Handler) http.Handler {
+	return csrf.Protect(app.keys.CSRFKey, csrfOptions(app)...)(next)
+}
+
+func csrfProtectForm(app *App, next http.Handler) http.Handler {
+	protected := csrf.Protect(app.keys.CSRFKey, csrfOptions(app)...)(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if IsJSON(r) {
 			next.ServeHTTP(w, r)
@@ -267,7 +285,7 @@ func RouteCollections(handler *Handler, r *mux.Router) {
 	r.HandleFunc("/email/confirm/{subscriber}", handler.All(handleConfirmEmailSubscription)).Methods("GET")
 	r.HandleFunc("/email/unsubscribe/{subscriber}", handler.All(handleDeleteEmailSubscription)).Methods("GET")
 	r.HandleFunc("/{slug}", handler.CollectionPostOrStatic)
-	r.Path("/{slug}/edit").Handler(csrfProtect(handler.app.App().keys.CSRFKey, handler.Web(handleViewPad, UserLevelUser)))
+	r.Path("/{slug}/edit").Handler(csrfProtect(handler.app.App(), handler.Web(handleViewPad, UserLevelUser)))
 	r.HandleFunc("/{slug}/edit/meta", handler.Web(handleViewMeta, UserLevelUser))
 	r.HandleFunc("/{slug}/", handler.Web(handleCollectionPostRedirect, UserLevelReader)).Methods("GET")
 }
