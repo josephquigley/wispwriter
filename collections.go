@@ -1325,6 +1325,13 @@ func existingCollection(app *App, w http.ResponseWriter, r *http.Request) error 
 			return ErrBadFormData
 		}
 
+		// The settings form submits one verification_link_row field per
+		// link. Join them into the single newline-separated
+		// verification_link value the decoder expects.
+		if rows, ok := r.PostForm["verification_link_row"]; ok {
+			r.PostForm.Set("verification_link", serializeVerificationLinks(rows))
+		}
+
 		err = app.formDecoder.Decode(&c, r.PostForm)
 		if err != nil {
 			log.Error("Couldn't decode collection update form request: %v\n", err)
