@@ -67,7 +67,7 @@ body#post header {
 			<p style="text-align: left">Published by <a rel="author" href="{{if .IsTopLevel}}/{{else}}/{{.Collection.Alias}}/{{end}}" class="h-card p-author">{{.Collection.DisplayTitle}}</a>
 				{{ if .IsOwner }} &middot; <span class="views" dir="ltr"><strong>{{largeNumFmt .Views}}</strong> {{pluralize "view" "views" .Views}}</span>
 				&middot; <a class="xtra-feature" href="/{{if not .SingleUser}}{{.Collection.Alias}}/{{end}}{{.Slug.String}}/edit" dir="{{.Direction}}">Edit</a>
-				{{if .IsPinned}} &middot; <a class="xtra-feature unpin" href="/{{.Collection.Alias}}/{{.Slug.String}}/unpin" dir="{{.Direction}}" onclick="unpinPost(event, '{{.ID}}')">Unpin</a>{{end}}
+				{{if .IsPinned}} &middot; <a class="xtra-feature unpin" href="/{{if not .SingleUser}}{{.Collection.Alias}}/{{end}}{{.Slug.String}}/unpin" dir="{{.Direction}}" onclick="unpinPost(event, '{{.ID}}')">Unpin</a>{{end}}
 				{{ end }}
 			</p>
 			<nav>
