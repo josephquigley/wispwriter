@@ -24,3 +24,9 @@ func TestUploadConfigDefaults(t *testing.T) {
 	assert.Equal(t, 10, cfg.Uploads.MaxSizeMB)
 	assert.Equal(t, []string{"image/png", "image/jpeg", "image/gif"}, cfg.AllowedUploadTypes())
 }
+
+func TestPostImagesTableExists(t *testing.T) {
+	app, _ := newTemplateTestApp(t, nil)
+	_, err := app.db.Exec("SELECT id, owner_id, post_id, sha256, filename, mime, size, created FROM post_images WHERE 1 = 0")
+	assert.NoError(t, err, "post_images must exist with the expected columns")
+}
