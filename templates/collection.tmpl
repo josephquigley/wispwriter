@@ -122,7 +122,7 @@
 			{{end}}
 		</nav>{{end}}
 
-		{{if not .IsWelcome}}{{template "emailsubscribe" .}}{{end}}
+		{{if and (not .IsWelcome) .ShowSubscribeIndex}}{{template "emailsubscribe" .}}{{end}}
 
 		{{if .Posts}}</section>{{else}}</div>{{end}}
 
