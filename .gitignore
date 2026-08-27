@@ -11,3 +11,5 @@ tmp
 
 bindata.go
 static/uploads
+
+.env

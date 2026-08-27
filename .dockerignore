@@ -1,1 +1,34 @@
+# Keep .git: the Makefile derives the version string from `git describe`,
+# so excluding it silently produces a binary reporting no version.
+
+# Build output
+build
+tmp
+cmd/writefreely/writefreely
+
+# Dependencies fetched during the build
+node_modules
+
+# Local configuration and data. config.ini in particular can hold live
+# database credentials, and must never enter the build context.
+*.ini
+*.db
+static/local/custom.css
+
+# Editor and OS noise
+*~
+*.swp
+*.swo
+.DS_Store
+
+# Container definitions themselves
 Dockerfile
+Dockerfile.prod
+docker-compose.yml
+docker-compose.prod.yml
+.dockerignore
+
+# Docs and CI
+.github
+docs
+*.md

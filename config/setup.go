@@ -155,13 +155,18 @@ func Configure(fname string, configSections string) (*SetupData, error) {
 		}
 
 		// If running in docker:
-		// 1. always bind to 0.0.0.0 instead of localhost
+		// 1. always bind to 0.0.0.0 instead of localhost, including in a
+		//    development environment -- a container bound to localhost is
+		//    unreachable from the host whatever the environment
 		// 2. set paths of static files in UNIX manners
-		if !isDevEnv && isDocker {
-			data.Config.Server.TemplatesParentDir = "/usr/share/writefreely"
-			data.Config.Server.StaticParentDir = "/usr/share/writefreely"
-			data.Config.Server.PagesParentDir = "/usr/share/writefreely"
+		if isDocker {
 			data.Config.Server.Bind = "0.0.0.0"
+		}
+		if !isDevEnv && isDocker {
+			parentDir := dockerAssetParentDir()
+			data.Config.Server.TemplatesParentDir = parentDir
+			data.Config.Server.StaticParentDir = parentDir
+			data.Config.Server.PagesParentDir = parentDir
 		}
 
 		fmt.Println()
@@ -404,4 +409,17 @@ func Configure(fname string, configSections string) (*SetupData, error) {
 	}
 
 	return data, Save(data.Config, fname)
+}
+
+// dockerAssetParentDir returns the directory holding the templates, static
+// and pages trees inside a container. Images do not agree on a layout --
+// one keeps the assets under /go, another under /usr/share/writefreely --
+// so the image declares its own via WRITEFREELY_DOCKER_PARENT_DIR, and the
+// historical location is the fallback for images that set only
+// WRITEFREELY_DOCKER.
+func dockerAssetParentDir() string {
+	if dir := os.Getenv("WRITEFREELY_DOCKER_PARENT_DIR"); dir != "" {
+		return dir
+	}
+	return "/usr/share/writefreely"
 }
