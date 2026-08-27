@@ -179,6 +179,7 @@ func InitRoutes(apper Apper, r *mux.Router) *mux.Router {
 	write.HandleFunc("/admin/user/{username}/delete", handler.Admin(handleAdminDeleteUser)).Methods("POST")
 	write.HandleFunc("/admin/user/{username}/status", handler.Admin(handleAdminToggleUserStatus)).Methods("POST")
 	write.HandleFunc("/admin/user/{username}/passphrase", handler.Admin(handleAdminResetUserPass)).Methods("POST")
+	write.HandleFunc("/admin/posts", handler.Admin(handleViewAdminPosts)).Methods("GET")
 	write.HandleFunc("/admin/pages", handler.Admin(handleViewAdminPages)).Methods("GET")
 	write.HandleFunc("/admin/page/{slug}", handler.Admin(handleViewAdminPage)).Methods("GET")
 	write.HandleFunc("/admin/update/config", handler.AdminApper(handleAdminUpdateConfig)).Methods("POST")

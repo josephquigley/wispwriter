@@ -101,3 +101,28 @@ func viewCollectionPosts(app *App, u *User, w http.ResponseWriter, r *http.Reque
 	showUserPage(w, "collection-posts", obj)
 	return nil
 }
+
+// handleViewAdminPosts renders a paginated list of every post on the
+// instance, with the same per-row actions as the owner-facing view.
+func handleViewAdminPosts(app *App, u *User, w http.ResponseWriter, r *http.Request) error {
+	page := pageParam(r)
+	posts, total, err := app.db.GetAllPostsForAdmin(page)
+	if err != nil {
+		return err
+	}
+
+	flashes, _ := getSessionFlashes(app, w, r, nil)
+
+	obj := &postListPage{
+		UserPage:    NewUserPage(app, r, u, "Posts", flashes),
+		Posts:       posts,
+		ShowBlog:    true,
+		SingleUser:  app.cfg.App.SingleUser,
+		Silenced:    u.IsSilenced(),
+		CurrentPage: page,
+		TotalPages:  pageNumbers(total),
+	}
+
+	showUserPage(w, "posts", obj)
+	return nil
+}
