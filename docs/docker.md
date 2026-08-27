@@ -165,3 +165,24 @@ not false-negative on a password-protected or unconfigured instance.
 
 **Uploaded images disappeared after an upgrade.** The uploads volume was
 missing. See the note above.
+
+**`Invalid database type 'sqlite'. Only 'mysql' and 'sqlite3' are
+supported right now.`** The driver name in `config.ini` is `sqlite3`, not
+`sqlite`. The interactive configurator writes the right value; this bites
+when the file is written by hand.
+
+## Running on SQLite instead of MariaDB
+
+Neither compose stack uses SQLite, but the images support it and it is a
+reasonable choice for a small single-user instance. Drop the database
+service and point the config at a file on a volume:
+
+```ini
+[database]
+type     = sqlite3
+filename = /data/writefreely.db
+```
+
+Make sure the containing directory is on a volume, or the database is
+destroyed with the container. The binary is built with the `sqlite` build
+tag, so no extra image is needed.
