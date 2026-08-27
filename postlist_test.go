@@ -69,3 +69,15 @@ func TestGetAllPostsForAdmin(t *testing.T) {
 	assert.True(t, aliases[collA.Alias])
 	assert.True(t, aliases[collB.Alias])
 }
+
+func TestPostRowPartialIsParsed(t *testing.T) {
+	app, _ := newTemplateTestApp(t, nil)
+	assert.NotNil(t, app)
+
+	tmpl, ok := userPages["user/collection-posts.tmpl"]
+	assert.True(t, ok, "collection-posts template should be registered")
+	if !ok {
+		return
+	}
+	assert.NotNil(t, tmpl.Lookup("post-row"), "post-row partial should be parsed into user pages")
+}
