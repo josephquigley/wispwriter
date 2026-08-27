@@ -296,3 +296,24 @@ func TestUploadsRootHonoursConfiguredDir(t *testing.T) {
 	assert.Equal(t, "/var/lib/writefreely/uploads", app.uploadsRoot(),
 		"a value with stray whitespace should not create a directory named with it")
 }
+
+func TestUploadsRootFallsBackToTheEnvironment(t *testing.T) {
+	cfg := config.New()
+	cfg.Server.StaticParentDir = "/srv/wf"
+	app := &App{cfg: cfg}
+
+	// An image can declare where its writable state lives, so uploads have
+	// a durable default without the operator writing any configuration.
+	t.Setenv(uploadsDirEnv, "/var/lib/writefreely/uploads")
+	assert.Equal(t, "/var/lib/writefreely/uploads", app.uploadsRoot())
+
+	// Configuration still wins over the image's default.
+	cfg.Uploads.Dir = "/srv/uploads"
+	assert.Equal(t, "/srv/uploads", app.uploadsRoot())
+
+	// And with neither, the derived path keeps a plain install
+	// self-contained.
+	cfg.Uploads.Dir = ""
+	t.Setenv(uploadsDirEnv, "")
+	assert.Equal(t, filepath.Join("/srv/wf", staticDir, uploadsDir), app.uploadsRoot())
+}

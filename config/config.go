@@ -201,10 +201,10 @@ type (
 	// deliberately. max_size_mb bounds a single file, not a user's total
 	// storage.
 	//
-	// dir is where uploaded files are written. Left empty they go under
-	// the static asset tree, which keeps a default install self-contained.
-	// Packaged installs want them somewhere writable and separate from the
-	// read-only assets, such as /var/lib/writefreely/uploads.
+	// dir is where uploaded files are written. Left empty, the
+	// WRITEFREELY_UPLOADS_DIR environment variable is used if set, so an
+	// image can supply a sensible default, and failing that they go under
+	// the static asset tree, which keeps a plain install self-contained.
 	//
 	// Which image types are accepted is not configurable: it is fixed by
 	// the decoders compiled in, in decodeAndReencode. SVG is excluded

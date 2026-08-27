@@ -27,6 +27,11 @@ import (
 )
 
 const (
+	// uploadsDirEnv lets the environment supply a default uploads
+	// directory, for images that keep writable state outside the asset
+	// tree. An explicit [uploads] dir still wins.
+	uploadsDirEnv = "WRITEFREELY_UPLOADS_DIR"
+
 	// uploadsDir is the directory, under the static directory, that uploaded
 	// images are stored in and served from.
 	uploadsDir = "uploads"
@@ -168,6 +173,14 @@ func imagePath(ownerID int64, sum, ext string) string {
 // uploadsRoot returns the directory uploaded images are written to.
 func (app *App) uploadsRoot() string {
 	if dir := strings.TrimSpace(app.cfg.Uploads.Dir); dir != "" {
+		return dir
+	}
+	// An image knows where its writable state lives, and a container's
+	// config.ini is usually written by hand rather than by the
+	// configurator. Letting the image say so means uploads land somewhere
+	// durable by default, instead of inside the asset tree where an image
+	// upgrade would discard them.
+	if dir := strings.TrimSpace(os.Getenv(uploadsDirEnv)); dir != "" {
 		return dir
 	}
 	return filepath.Join(app.cfg.Server.StaticParentDir, staticDir, uploadsDir)
