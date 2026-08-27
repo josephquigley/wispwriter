@@ -150,12 +150,22 @@ func TestSwapPinnedPositionsRejectsForeignPost(t *testing.T) {
 func TestViewPinnedPosts(t *testing.T) {
 	app, router := newTemplateTestApp(t, nil)
 	u, coll, _ := createTemplateTestUser(t, app, "pinviewer")
-	seedPinnedPosts(t, app, coll, []int64{1, 2})
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2})
 
 	cookies := []*http.Cookie{loginCookie(t, app, u)}
 	rec := assertRendersCleanly(t, router, "GET", "/me/c/"+coll.Alias+"/pinned", cookies, http.StatusOK)
-	assert.Contains(t, rec.Body.String(), "Pinned 1")
-	assert.Contains(t, rec.Body.String(), "Pinned 2")
+	body := rec.Body.String()
+	assert.Contains(t, body, "Pinned 1")
+	assert.Contains(t, body, "Pinned 2")
+
+	// The first row has no "move up" control and the last no "move down".
+	base := "/me/c/" + coll.Alias + "/pinned/"
+	assert.NotContains(t, body, base+ids[0]+"/up")
+	assert.Contains(t, body, base+ids[0]+"/down")
+	assert.Contains(t, body, base+ids[1]+"/up")
+	assert.NotContains(t, body, base+ids[1]+"/down")
+	assert.Contains(t, body, base+ids[0]+"/remove")
+	assert.Contains(t, body, base+ids[1]+"/remove")
 }
 
 func TestViewPinnedPostsRejectsNonOwner(t *testing.T) {
