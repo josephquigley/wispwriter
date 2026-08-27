@@ -12,3 +12,8 @@ tmp
 bindata.go
 
 .env
+
+# Production compose stack state (bind mounts)
+/data
+/dbdata
+/uploads
