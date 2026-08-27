@@ -533,3 +533,128 @@ func TestProseEditorIncludesUploader(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "window.wfImageUploads")
 	assert.Contains(t, rec.Body.String(), `id="image-strip"`)
 }
+
+func TestSavingPostAttachesItsImages(t *testing.T) {
+	app, _, u, _ := newImageTestApp(t)
+	coll, err := app.db.GetCollection("uploader")
+	assert.NoError(t, err)
+
+	rec, _ := doUpload(t, app, u, uploadRequest(t, "a.png", "image/png", tinyPNG(t)))
+	imgID, url := uploadedURL(t, rec)
+
+	title := "With an image"
+	body := "Look at this ![a](" + url + ")"
+	post, err := app.db.CreatePost(u.ID, coll.ID, &SubmittedPost{Title: &title, Content: &body})
+	assert.NoError(t, err)
+
+	attachPostImages(app, u.ID, post.ID, body)
+
+	imgs, err := app.db.GetImagesForPost(post.ID)
+	assert.NoError(t, err)
+	assert.Len(t, *imgs, 1)
+	assert.Equal(t, imgID, (*imgs)[0].ID)
+}
+
+func TestDeletingPostRemovesUnsharedImages(t *testing.T) {
+	app, _, u, _ := newImageTestApp(t)
+	coll, err := app.db.GetCollection("uploader")
+	assert.NoError(t, err)
+
+	rec, _ := doUpload(t, app, u, uploadRequest(t, "a.png", "image/png", tinyPNG(t)))
+	imgID, url := uploadedURL(t, rec)
+
+	title := "Only user"
+	body := "![a](" + url + ")"
+	post, err := app.db.CreatePost(u.ID, coll.ID, &SubmittedPost{Title: &title, Content: &body})
+	assert.NoError(t, err)
+	attachPostImages(app, u.ID, post.ID, body)
+
+	// The post row goes first, exactly as the delete handler does it.
+	_, err = app.db.Exec("DELETE FROM posts WHERE id = ?", post.ID)
+	assert.NoError(t, err)
+	cleanUpPostImages(app, post.ID)
+
+	_, err = app.db.GetPostImage(imgID)
+	assert.Error(t, err, "the image row must be gone")
+	assert.Equal(t, 0, countUploadedFiles(t, app))
+}
+
+func TestDeletingPostKeepsSharedImages(t *testing.T) {
+	app, _, u, _ := newImageTestApp(t)
+	coll, err := app.db.GetCollection("uploader")
+	assert.NoError(t, err)
+
+	rec, _ := doUpload(t, app, u, uploadRequest(t, "a.png", "image/png", tinyPNG(t)))
+	imgID, url := uploadedURL(t, rec)
+
+	body := "![a](" + url + ")"
+	t1 := "First"
+	p1, err := app.db.CreatePost(u.ID, coll.ID, &SubmittedPost{Title: &t1, Content: &body})
+	assert.NoError(t, err)
+	t2 := "Second"
+	_, err = app.db.CreatePost(u.ID, coll.ID, &SubmittedPost{Title: &t2, Content: &body})
+	assert.NoError(t, err)
+	attachPostImages(app, u.ID, p1.ID, body)
+
+	_, err = app.db.Exec("DELETE FROM posts WHERE id = ?", p1.ID)
+	assert.NoError(t, err)
+	cleanUpPostImages(app, p1.ID)
+
+	_, err = app.db.GetPostImage(imgID)
+	assert.NoError(t, err, "an image another post still uses must survive")
+	assert.Equal(t, 1, countUploadedFiles(t, app))
+}
+
+func TestOrphanSweepRemovesOldUnattachedImages(t *testing.T) {
+	app, _, u, _ := newImageTestApp(t)
+	_, _, post := createTemplateTestUser(t, app, "sweeper")
+
+	rec, _ := doUpload(t, app, u, uploadRequest(t, "old.png", "image/png", tinyPNG(t)))
+	oldID, _ := uploadedURL(t, rec)
+	rec, _ = doUpload(t, app, u, uploadRequest(t, "new.jpg", "image/jpeg", tinyJPEG(t)))
+	recentID, _ := uploadedURL(t, rec)
+	rec, _ = doUpload(t, app, u, uploadRequest(t, "att.gif", "image/gif", animatedGIF(t)))
+	attachedID, _ := uploadedURL(t, rec)
+	assert.NoError(t, app.db.AttachImagesToPost(u.ID, post.ID, []string{attachedID}))
+
+	assert.Equal(t, 3, countUploadedFiles(t, app))
+
+	ageImage(t, app, oldID, 25)
+	ageImage(t, app, recentID, 1)
+	ageImage(t, app, attachedID, 25)
+
+	sweepOrphanedImages(app)
+
+	_, err := app.db.GetPostImage(oldID)
+	assert.Error(t, err, "an abandoned draft upload must be swept")
+	_, err = app.db.GetPostImage(recentID)
+	assert.NoError(t, err, "a recent upload must be kept")
+	_, err = app.db.GetPostImage(attachedID)
+	assert.NoError(t, err, "an attached image must be kept")
+	assert.Equal(t, 2, countUploadedFiles(t, app))
+}
+
+func TestDeletePostEndpointCleansUpImages(t *testing.T) {
+	app, router, u, cookies := newImageTestApp(t)
+
+	rec, _ := doUpload(t, app, u, uploadRequest(t, "a.png", "image/png", tinyPNG(t)))
+	imgID, url := uploadedURL(t, rec)
+
+	title := "Draft with an image"
+	body := "![a](" + url + ")"
+	post, err := app.db.CreatePost(u.ID, 0, &SubmittedPost{Title: &title, Content: &body})
+	assert.NoError(t, err)
+	attachPostImages(app, u.ID, post.ID, body)
+
+	req := httptest.NewRequest("DELETE", "/api/posts/"+post.ID, nil)
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	del := httptest.NewRecorder()
+	router.ServeHTTP(del, req)
+	assert.Equal(t, http.StatusNoContent, del.Code, "body: %s", del.Body.String())
+
+	_, err = app.db.GetPostImage(imgID)
+	assert.Error(t, err, "deleting a post must clean up the images only it used")
+	assert.Equal(t, 0, countUploadedFiles(t, app))
+}

@@ -682,6 +682,9 @@ func newPost(app *App, w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if p.Content != nil {
+		attachPostImages(app, userID, newPost.ID, *p.Content)
+	}
 	if coll != nil {
 		coll.ForPublic()
 		newPost.Collection = &CollectionObj{Collection: *coll}
@@ -798,6 +801,10 @@ func existingPost(app *App, w http.ResponseWriter, r *http.Request) error {
 		} else {
 			addSessionFlash(app, w, r, err.Error(), nil)
 		}
+	}
+
+	if p.SubmittedPost.Content != nil {
+		attachPostImages(app, userID, p.ID, *p.SubmittedPost.Content)
 	}
 
 	var pRes *PublicPost
@@ -955,6 +962,9 @@ func deletePost(app *App, w http.ResponseWriter, r *http.Request) error {
 	if coll != nil && !app.cfg.App.Private && app.cfg.App.Federation {
 		go deleteFederatedPost(app, pp, collID.Int64)
 	}
+
+	// The post is gone, so a cleanup failure mustn't fail the delete.
+	cleanUpPostImages(app, friendlyID)
 
 	return impart.HTTPError{Status: http.StatusNoContent}
 }
