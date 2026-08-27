@@ -659,3 +659,46 @@ func TestDeletePostEndpointCleansUpImages(t *testing.T) {
 	assert.Error(t, err, "deleting a post must clean up the images only it used")
 	assert.Equal(t, 0, countUploadedFiles(t, app))
 }
+
+// TestImageUploadErrorsAreJSON asserts the upload endpoint answers a
+// rejected upload with a JSON error and the real status code. Routed as a
+// web handler it rendered the HTML error page with a 200, so the uploader
+// JS could not tell success from failure.
+func TestImageUploadErrorsAreJSON(t *testing.T) {
+	_, router, _, cookies := newImageTestApp(t)
+
+	// Load the editor to pick up a CSRF token and its cookie.
+	padReq := httptest.NewRequest("GET", "/me/new", nil)
+	for _, c := range cookies {
+		padReq.AddCookie(c)
+	}
+	padRec := httptest.NewRecorder()
+	router.ServeHTTP(padRec, padReq)
+	m := regexp.MustCompile(`csrfToken: "([^"]*)"`).FindStringSubmatch(padRec.Body.String())
+	assert.NotNil(t, m, "the editor must carry a CSRF token")
+	if m == nil {
+		return
+	}
+
+	req := uploadRequest(t, "evil.png", "image/png", []byte("<html><script>alert(1)</script></html>"))
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	for _, c := range padRec.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	req.Header.Set("X-CSRF-Token", m[1])
+	req.Header.Set("Origin", "http://example.com")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnsupportedMediaType, rec.Code,
+		"a rejected upload must carry its real status, not 200")
+	assert.NotContains(t, rec.Body.String(), "<!DOCTYPE HTML",
+		"the error must not be an HTML page")
+
+	var body map[string]interface{}
+	assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body),
+		"the error body must be JSON: %s", rec.Body.String())
+}

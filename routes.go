@@ -132,8 +132,8 @@ func InitRoutes(apper Apper, r *mux.Router) *mux.Router {
 	apiMe.Path("/self").Handler(csrfProtectForm(apper.App(), handler.All(updateSettings))).Methods("POST")
 	apiMe.Path("/invites").Handler(csrfProtectHandler(apper.App(), handler.User(handleCreateUserInvite))).Methods("POST")
 	apiMe.Path("/import").Handler(csrfProtectHandler(apper.App(), handler.User(handleImport))).Methods("POST")
-	apiMe.Path("/images").Handler(csrfProtectHandler(apper.App(), handler.User(handleUploadImage))).Methods("POST")
-	apiMe.Path("/images/{image}").Handler(csrfProtectHandler(apper.App(), handler.User(handleDeleteImage))).Methods("DELETE")
+	apiMe.Path("/images").Handler(csrfProtectHandler(apper.App(), handler.UserWebAPI(handleUploadImage))).Methods("POST")
+	apiMe.Path("/images/{image}").Handler(csrfProtectHandler(apper.App(), handler.UserWebAPI(handleDeleteImage))).Methods("DELETE")
 	apiMe.Path("/oauth/remove").Handler(csrfProtectHandler(apper.App(), handler.User(removeOauth))).Methods("POST")
 
 	// Sign up validation
