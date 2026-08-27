@@ -113,3 +113,30 @@ func TestNormalizePinnedPositionsWithNoPinnedPosts(t *testing.T) {
 
 	assert.NoError(t, app.db.NormalizePinnedPositions(coll.ID))
 }
+
+func TestSwapPinnedPositions(t *testing.T) {
+	app, _ := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "swapper")
+
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2, 3})
+	assert.NoError(t, app.db.SwapPinnedPositions(coll.ID, u.ID, ids[0], ids[1]))
+
+	gotIDs, gotPos := pinnedPositions(t, app, coll.ID)
+	assert.Equal(t, []string{ids[1], ids[0], ids[2]}, gotIDs)
+	assert.Equal(t, []int64{1, 2, 3}, gotPos, "positions stay dense")
+}
+
+func TestSwapPinnedPositionsRejectsForeignPost(t *testing.T) {
+	app, _ := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "swapowner")
+	_, otherColl, _ := createTemplateTestUser(t, app, "swapstranger")
+
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2})
+	otherIDs := seedPinnedPosts(t, app, otherColl, []int64{1})
+
+	err := app.db.SwapPinnedPositions(coll.ID, u.ID, ids[0], otherIDs[0])
+	assert.Error(t, err, "a post from another blog must be rejected")
+
+	_, gotPos := pinnedPositions(t, app, coll.ID)
+	assert.Equal(t, []int64{1, 2}, gotPos, "nothing may be written on rejection")
+}

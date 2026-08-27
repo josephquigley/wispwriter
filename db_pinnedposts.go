@@ -11,6 +11,8 @@
 package writefreely
 
 import (
+	"database/sql"
+
 	"github.com/writeas/web-core/log"
 )
 
@@ -71,4 +73,56 @@ func (db *datastore) NormalizePinnedPositions(collID int64) error {
 		return err
 	}
 	return nil
+}
+
+// SwapPinnedPositions exchanges the pinned positions of two posts in the
+// same collection. Both posts must be pinned posts of that collection and
+// owned by ownerID; ownership is re-checked in SQL rather than trusted from
+// the caller, so a post ID from another user's blog cannot be swapped in.
+// The swap runs in a single transaction.
+func (db *datastore) SwapPinnedPositions(collID, ownerID int64, postA, postB string) error {
+	posA, err := db.pinnedPosition(collID, ownerID, postA)
+	if err != nil {
+		return err
+	}
+	posB, err := db.pinnedPosition(collID, ownerID, postB)
+	if err != nil {
+		return err
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		log.Error("Failed starting pinned position swap: %v", err)
+		return err
+	}
+	if _, err := tx.Exec("UPDATE posts SET pinned_position = ? WHERE id = ? AND collection_id = ? AND owner_id = ?", posB, postA, collID, ownerID); err != nil {
+		tx.Rollback()
+		log.Error("Failed swapping pinned position of %s: %v", postA, err)
+		return err
+	}
+	if _, err := tx.Exec("UPDATE posts SET pinned_position = ? WHERE id = ? AND collection_id = ? AND owner_id = ?", posA, postB, collID, ownerID); err != nil {
+		tx.Rollback()
+		log.Error("Failed swapping pinned position of %s: %v", postB, err)
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		log.Error("Failed committing pinned position swap: %v", err)
+		return err
+	}
+	return nil
+}
+
+// pinnedPosition returns the pinned position of a post, but only if the post
+// is a pinned post of the given collection and owned by the given user.
+func (db *datastore) pinnedPosition(collID, ownerID int64, postID string) (int64, error) {
+	var pos int64
+	err := db.QueryRow("SELECT pinned_position FROM posts WHERE id = ? AND collection_id = ? AND owner_id = ? AND pinned_position IS NOT NULL", postID, collID, ownerID).Scan(&pos)
+	if err == sql.ErrNoRows {
+		return 0, ErrPostNotFound
+	}
+	if err != nil {
+		log.Error("Failed getting pinned position of %s: %v", postID, err)
+		return 0, err
+	}
+	return pos, nil
 }
