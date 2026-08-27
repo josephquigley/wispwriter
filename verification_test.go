@@ -1,7 +1,10 @@
 package writefreely
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/writefreely/writefreely/config"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -47,6 +50,12 @@ func TestCollectionVerificationAccessor(t *testing.T) {
 	c.Verifications = []string{"https://first.example", "https://second.example"}
 	assert.Equal(t, "https://first.example", c.Verification(),
 		"the first link is the canonical identity")
+}
+
+// multiUser configures the test app for multi-user mode, where a blog is
+// served under /{alias}/ rather than at the instance root.
+func multiUser(cfg *config.Config) {
+	cfg.App.SingleUser = false
 }
 
 // saveVerificationLinks updates a collection's verification links through
@@ -131,4 +140,52 @@ func TestClearingVerificationLinksRemovesThemAll(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{}, loaded.Verifications)
 	assert.Equal(t, "", loaded.Verification())
+}
+
+func TestRendersAllVerificationLinks(t *testing.T) {
+	app, router := newTemplateTestApp(t, multiUser)
+	_, coll, _ := createTemplateTestUser(t, app, "multiverify")
+
+	err := saveVerificationLinks(app, coll, "https://a.example\nhttps://b.example")
+	assert.NoError(t, err)
+
+	// renderedRequest's second return is captured log output, not the body.
+	rec, _ := renderedRequest(t, router, "GET", "/"+coll.Alias+"/", nil)
+	body := rec.Body.String()
+	assert.Contains(t, body, `<link rel="me" href="https://a.example" />`)
+	assert.Contains(t, body, `<link rel="me" href="https://b.example" />`)
+	assert.Less(t, strings.Index(body, "https://a.example"), strings.Index(body, "https://b.example"),
+		"links must render in stored order")
+}
+
+func TestFediverseCreatorUsesFirstLink(t *testing.T) {
+	app, router := newTemplateTestApp(t, multiUser)
+	_, coll, post := createTemplateTestUser(t, app, "fedicreator")
+
+	// Both links resolve to a known remote user, so only the ordering can
+	// decide which handle fediverse:creator ends up carrying.
+	for _, ru := range []struct{ url, handle string }{
+		{"https://first.example/@one", "@one@first.example"},
+		{"https://second.example/@two", "@two@second.example"},
+	} {
+		_, err := app.db.Exec("INSERT INTO remoteusers (actor_id, inbox, shared_inbox, url, handle) VALUES (?, ?, ?, ?, ?)",
+			ru.url, ru.url+"/inbox", ru.url+"/inbox", ru.url, ru.handle)
+		assert.NoError(t, err)
+	}
+
+	err := saveVerificationLinks(app, coll, "https://first.example/@one\nhttps://second.example/@two")
+	assert.NoError(t, err)
+
+	slug := post.Slug.String
+	if slug == "" {
+		slug = post.ID
+	}
+	rec, _ := renderedRequest(t, router, "GET", "/"+coll.Alias+"/"+slug, nil)
+	body := rec.Body.String()
+
+	assert.Equal(t, 1, strings.Count(body, `name="fediverse:creator"`),
+		"exactly one fediverse:creator tag")
+	assert.Contains(t, body, `<meta name="fediverse:creator" content="@one@first.example">`)
+	assert.NotContains(t, body, "@two@second.example")
+	assert.Contains(t, body, `<link rel="me" href="https://second.example/@two" />`)
 }
