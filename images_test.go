@@ -19,6 +19,7 @@ import (
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -384,13 +385,25 @@ func TestImageUploadDisabledReturnsNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, status, "a disabled feature should not advertise itself")
 }
 
-func TestImageUploadRequiresSession(t *testing.T) {
-	_, router, _, _ := newImageTestApp(t)
+func TestImageUploadRejectsUnauthenticatedRequest(t *testing.T) {
+	app, router, _, cookies := newImageTestApp(t)
 
+	// No session and no CSRF token.
 	req := uploadRequest(t, "a.png", "image/png", tinyPNG(t))
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	assert.True(t, rec.Code >= 400, "an unauthenticated upload must be refused, got %d", rec.Code)
+
+	// A session but no CSRF token is refused too.
+	req = uploadRequest(t, "a.png", "image/png", tinyPNG(t))
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+
+	assert.Equal(t, 0, countUploadedFiles(t, app))
 }
 
 func TestImageDeleteRemovesUnreferencedImage(t *testing.T) {
@@ -451,4 +464,58 @@ func TestUploadsAreServedWithHardeningHeaders(t *testing.T) {
 	assert.Equal(t, http.StatusOK, got.Code)
 	assert.Equal(t, "nosniff", got.Header().Get("X-Content-Type-Options"))
 	assert.Equal(t, "inline", got.Header().Get("Content-Disposition"))
+}
+
+func TestPadIncludesUploaderOnlyWhenEnabled(t *testing.T) {
+	_, router, _, cookies := newImageTestApp(t)
+	rec := assertRendersCleanly(t, router, "GET", "/me/new", cookies, http.StatusOK)
+	assert.Contains(t, rec.Body.String(), "/js/image-upload.js")
+	assert.Contains(t, rec.Body.String(), `id="image-strip"`)
+
+	staticDir := t.TempDir()
+	app2, router2 := newTemplateTestApp(t, func(cfg *config.Config) {
+		cfg.Server.StaticParentDir = staticDir
+	})
+	u2, _, _ := createTemplateTestUser(t, app2, "nouploads")
+	rec2 := assertRendersCleanly(t, router2, "GET", "/me/new", []*http.Cookie{loginCookie(t, app2, u2)}, http.StatusOK)
+	assert.NotContains(t, rec2.Body.String(), "/js/image-upload.js",
+		"a disabled feature must not appear in the editor")
+}
+
+func TestImageUploadThroughRouterWithCSRF(t *testing.T) {
+	app, router, u, cookies := newImageTestApp(t)
+
+	// Load the editor to pick up a CSRF token and its cookie.
+	padReq := httptest.NewRequest("GET", "/me/new", nil)
+	for _, c := range cookies {
+		padReq.AddCookie(c)
+	}
+	padRec := httptest.NewRecorder()
+	router.ServeHTTP(padRec, padReq)
+	assert.Equal(t, http.StatusOK, padRec.Code)
+
+	m := regexp.MustCompile(`csrfToken: "([^"]*)"`).FindStringSubmatch(padRec.Body.String())
+	assert.NotNil(t, m, "the editor must carry a CSRF token")
+	if m == nil {
+		return
+	}
+	assert.NotEmpty(t, m[1])
+
+	req := uploadRequest(t, "a.png", "image/png", tinyPNG(t))
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	for _, c := range padRec.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	req.Header.Set("X-CSRF-Token", m[1])
+	// gorilla/csrf treats requests as TLS unless told otherwise, so the
+	// Origin a browser would send over HTTPS is what it wants to see.
+	req.Header.Set("Origin", "https://example.com")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	assert.Equal(t, 1, countUploadedFiles(t, app))
+	_ = u
 }
