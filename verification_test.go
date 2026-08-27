@@ -1,6 +1,9 @@
 package writefreely
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -188,4 +191,61 @@ func TestFediverseCreatorUsesFirstLink(t *testing.T) {
 	assert.Contains(t, body, `<meta name="fediverse:creator" content="@one@first.example">`)
 	assert.NotContains(t, body, "@two@second.example")
 	assert.Contains(t, body, `<link rel="me" href="https://second.example/@two" />`)
+}
+
+func TestSettingsRendersOneRowPerLink(t *testing.T) {
+	app, router := newTemplateTestApp(t, multiUser)
+	u, coll, _ := createTemplateTestUser(t, app, "rowsettings")
+
+	err := saveVerificationLinks(app, coll, "https://a.example\nhttps://b.example")
+	assert.NoError(t, err)
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	rec, _ := renderedRequest(t, router, "GET", "/me/c/"+coll.Alias, cookies)
+	assert.Equal(t, 2, strings.Count(rec.Body.String(), `name="verification_link_row"`),
+		"one input row per stored link")
+}
+
+func TestSubmittingRowsSavesAllLinks(t *testing.T) {
+	app, router := newTemplateTestApp(t, multiUser)
+	u, coll, _ := createTemplateTestUser(t, app, "rowsubmit")
+
+	form := url.Values{}
+	form.Set("title", coll.Title)
+	form.Add("verification_link_row", "https://a.example")
+	form.Add("verification_link_row", "  ")
+	form.Add("verification_link_row", "https://b.example")
+
+	req := httptest.NewRequest("POST", "/api/collections/"+coll.Alias, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(loginCookie(t, app, u))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Less(t, rec.Code, 400, "settings POST should not error")
+
+	loaded, err := app.db.GetCollection(coll.Alias)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"https://a.example", "https://b.example"}, loaded.Verifications)
+}
+
+func TestSubmittingEmptyRowClearsLinks(t *testing.T) {
+	app, router := newTemplateTestApp(t, multiUser)
+	u, coll, _ := createTemplateTestUser(t, app, "rowclear")
+
+	assert.NoError(t, saveVerificationLinks(app, coll, "https://a.example"))
+
+	form := url.Values{}
+	form.Set("title", coll.Title)
+	form.Add("verification_link_row", "")
+
+	req := httptest.NewRequest("POST", "/api/collections/"+coll.Alias, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(loginCookie(t, app, u))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Less(t, rec.Code, 400, "settings POST should not error")
+
+	loaded, err := app.db.GetCollection(coll.Alias)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{}, loaded.Verifications)
 }

@@ -195,8 +195,22 @@ textarea.section.norm {
 		<h2>Verification</h2>
 		<div class="section">
 			<p class="explain">Verify that you own another site on the open web, fediverse, etc. For example, enter your Mastodon profile address here, then on Mastodon add a link back to this blog &mdash; it will show up as <a href="https://joinmastodon.org/verification" target="mastoverified">verified</a> there.</p>
-			<input type="text" name="verification_link" style="width:100%" value="{{.Verification}}" placeholder="https://writing.exchange/@writefreely" />
-			<p class="explain">This adds a <code>rel="me"</code> code in your blog's <code>&lt;head&gt;</code>.</p>
+			<div id="verification-links">
+				{{range .Verifications}}
+				<div class="verification-row">
+					<input type="text" name="verification_link_row" value="{{.}}" placeholder="https://writing.exchange/@writefreely" />
+					<button type="button" class="remove-verification" title="Remove this link">&times;</button>
+				</div>
+				{{end}}
+				{{if not .Verifications}}
+				<div class="verification-row">
+					<input type="text" name="verification_link_row" value="" placeholder="https://writing.exchange/@writefreely" />
+					<button type="button" class="remove-verification" title="Remove this link">&times;</button>
+				</div>
+				{{end}}
+			</div>
+			<button type="button" id="add-verification">Add another link</button>
+			<p class="explain">These add <code>rel="me"</code> codes in your blog's <code>&lt;head&gt;</code>. The first one is used as your blog's primary identity.</p>
 		</div>
 	</div>
 
@@ -237,6 +251,7 @@ textarea.section.norm {
 
 <script src="/js/h.js"></script>
 <script src="/js/modals.js"></script>
+<script src="/js/verification-rows.js"></script>
 <script src="/js/ace.js" type="text/javascript" charset="utf-8"></script>
 <script>
 H.getEl('cancel-delete').on('click', closeModals);
