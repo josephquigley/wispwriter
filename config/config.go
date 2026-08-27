@@ -25,6 +25,10 @@ const (
 	// FileName is the default configuration file name
 	FileName = "config.ini"
 
+	// DefaultTheme is the stylesheet served when a configuration does not
+	// name one.
+	DefaultTheme = "write"
+
 	UserNormal UserType = "user"
 	UserAdmin           = "admin"
 )
@@ -231,7 +235,7 @@ func New() *Config {
 		},
 		App: AppCfg{
 			Host:           "http://localhost:8080",
-			Theme:          "write",
+			Theme:          DefaultTheme,
 			WebFonts:       true,
 			SingleUser:     true,
 			MinUsernameLen: 3,
@@ -317,6 +321,15 @@ func Load(fname string) (*Config, error) {
 	err = cfg.MapTo(uc)
 	if err != nil {
 		return nil, err
+	}
+
+	// Values are mapped onto a zero-valued Config, so any key absent from
+	// the file stays empty rather than picking up New()'s default. An empty
+	// theme is not a usable state: the base template builds the stylesheet
+	// URL from it, so a configuration that omits the key requests
+	// "/css/.css" and the instance renders with no styling at all.
+	if uc.App.Theme == "" {
+		uc.App.Theme = DefaultTheme
 	}
 
 	// Do any transformations
