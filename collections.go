@@ -72,6 +72,13 @@ type (
 		// order. The first entry is the canonical identity and is what
 		// fediverse:creator is derived from.
 		Verifications []string `json:"verification_links"`
+		// VerificationLink is the first entry of Verifications, emitted
+		// under the key a single link used to use.
+		//
+		// Deprecated: read verification_links instead. This exists so that
+		// a client written against the single-link API keeps working, and
+		// it can only ever report one of what may be several links.
+		VerificationLink string `json:"verification_link"`
 
 		db       *datastore
 		hostName string

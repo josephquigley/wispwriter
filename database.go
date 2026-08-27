@@ -878,6 +878,9 @@ func (db *datastore) GetCollectionBy(condition string, value interface{}) (*Coll
 	c.Public = c.IsPublic()
 	c.Monetization = db.GetCollectionAttribute(c.ID, "monetization_pointer")
 	c.Verifications = parseVerificationLinks(db.GetCollectionAttribute(c.ID, "verification_link"))
+	// Deprecated: kept so a client written against the single-link API
+	// still finds a value under the old key.
+	c.VerificationLink = c.Verification()
 
 	c.db = db
 

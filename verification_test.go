@@ -1,6 +1,7 @@
 package writefreely
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -248,4 +249,44 @@ func TestSubmittingEmptyRowClearsLinks(t *testing.T) {
 	loaded, err := app.db.GetCollection(coll.Alias)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{}, loaded.Verifications)
+}
+
+// TestCollectionJSONKeepsSingleLinkKey covers the compatibility shim. A
+// client written against the single-link API reads verification_link, and
+// dropping that key would break it silently -- the field would simply be
+// absent rather than raise anything.
+func TestCollectionJSONKeepsSingleLinkKey(t *testing.T) {
+	app, _ := newTemplateTestApp(t, nil)
+	_, coll, _ := createTemplateTestUser(t, app, "compatlinks")
+
+	assert.NoError(t, saveVerificationLinks(app, coll, "https://a.example\nhttps://b.example"))
+
+	loaded, err := app.db.GetCollection(coll.Alias)
+	assert.NoError(t, err)
+
+	b, err := json.Marshal(loaded)
+	assert.NoError(t, err)
+
+	var out map[string]interface{}
+	assert.NoError(t, json.Unmarshal(b, &out))
+
+	assert.Equal(t, []interface{}{"https://a.example", "https://b.example"}, out["verification_links"],
+		"the current key carries every link")
+	assert.Equal(t, "https://a.example", out["verification_link"],
+		"the deprecated key carries the first, as it did when only one was possible")
+}
+
+func TestCollectionJSONSingleLinkKeyEmptyWhenUnset(t *testing.T) {
+	app, _ := newTemplateTestApp(t, nil)
+	_, coll, _ := createTemplateTestUser(t, app, "compatnone")
+
+	loaded, err := app.db.GetCollection(coll.Alias)
+	assert.NoError(t, err)
+
+	b, err := json.Marshal(loaded)
+	assert.NoError(t, err)
+
+	var out map[string]interface{}
+	assert.NoError(t, json.Unmarshal(b, &out))
+	assert.Equal(t, "", out["verification_link"], "the key is still present, as it was before")
 }
