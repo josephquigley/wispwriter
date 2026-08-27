@@ -36,8 +36,8 @@ func TestSoftwareVersionIsSet(t *testing.T) {
 // TestForkIdentity pins which surfaces carry the fork's edition name and
 // which must keep identifying as plain WriteFreely to other machines.
 func TestForkIdentity(t *testing.T) {
-	assert.Equal(t, "WriteFreely (Untethered Edition)", FormatSoftwareName())
-	assert.Equal(t, "WriteFreely (Untethered Edition) "+softwareVer, FormatVersion())
+	assert.Equal(t, "WriteFreely (Colophon Edition)", FormatSoftwareName())
+	assert.Equal(t, "WriteFreely (Colophon Edition) "+softwareVer, FormatVersion())
 
 	// Machine-facing identity is deliberately unchanged: NodeInfo reports
 	// strings.ToLower(serverSoftware), and the User-Agent and Server header
@@ -48,6 +48,10 @@ func TestForkIdentity(t *testing.T) {
 
 	// Documentation links must resolve to a release that exists upstream.
 	assert.NotEmpty(t, upstreamVer)
+	// The footer offers this build's source, which the AGPL requires to be
+	// the modified source rather than upstream's.
+	assert.NotContains(t, softwareRepoURL, "writefreely/writefreely",
+		"the source link must point at this fork, not upstream")
 	assert.NotEqual(t, softwareVer, upstreamVer,
 		"the fork versions independently, so these should differ")
 }

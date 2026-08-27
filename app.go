@@ -57,7 +57,7 @@ const (
 	// name. It deliberately does not appear in NodeInfo, the outbound
 	// User-Agent or the Server header: those identify the software to other
 	// machines, and this remains WriteFreely to them.
-	softwareEdition = "Untethered Edition"
+	softwareEdition = "Colophon Edition"
 	softwareURL     = "https://writefreely.org"
 )
 
@@ -66,6 +66,10 @@ var (
 
 	// Software version can be set from git env using -ldflags
 	softwareVer = "0.18.0"
+	// softwareRepoURL is where the source for this modified build lives.
+	// The AGPL obliges a network-served modified work to offer its own
+	// source, not the source it was derived from.
+	softwareRepoURL = "https://github.com/josephquigley/writefreely"
 	// upstreamVer is the WriteFreely release this fork is based on. The
 	// project's own documentation is versioned, so links to it must point at
 	// a release that exists upstream rather than at this fork's version.
@@ -374,6 +378,7 @@ func pageForReq(app *App, r *http.Request) page.StaticPage {
 		Path:            r.URL.Path,
 		Version:         "v" + softwareVer,
 		SoftwareName:    FormatSoftwareName(),
+		SoftwareURL:     softwareRepoURL,
 		UpstreamVersion: "v" + upstreamVer,
 	}
 

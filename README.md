@@ -2,7 +2,7 @@
 
 > **This is a modified version of WriteFreely.**
 >
-> It is maintained as *WriteFreely (Untethered Edition)* and is not
+> It is maintained as *WriteFreely (Colophon Edition)* and is not
 > affiliated with or endorsed by Musing Studio LLC or the WriteFreely
 > project. It is based on WriteFreely 0.17.2 and versions independently
 > from upstream, so its version numbers do not correspond to upstream
