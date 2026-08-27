@@ -2,7 +2,7 @@
 #
 # Before the first run:
 #   cp .env.example .env       and edit the passwords
-#   mkdir -p data db && sudo chown -R 1000:1000 data
+#   mkdir -p data dbdata && sudo chown -R 1000:1000 data
 #   docker compose -f docker-compose.prod.yml up -d --build
 #   docker compose -f docker-compose.prod.yml run --rm app writefreely --config
 #   docker compose -f docker-compose.prod.yml up -d
@@ -39,15 +39,18 @@ services:
     # handling is why: every piece of state here is a bind mount into this
     # directory, and this image adopts the ownership you ask for instead of
     # requiring the host directory be pre-chowned. Its data lives under
-    # /config/databases, hence the mount path.
+    # /config/databases, hence /config as the mount point.
     #
     # Pinned to the 11.4 LTS series rather than tracking latest, so a major
     # MariaDB upgrade is a deliberate act.
     image: lscr.io/linuxserver/mariadb:11.4.5
     container_name: writefreely-mariadb
 
+    # Deliberately NOT ./db: this repository already contains a Go package
+    # at db/, and mounting over it writes MariaDB's state into the source
+    # tree -- which is what the original file did.
     volumes:
-      - ./db:/config
+      - ./dbdata:/config
 
     environment:
       - PUID=${PUID:-65534}
