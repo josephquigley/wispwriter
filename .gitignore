@@ -10,3 +10,4 @@ tmp
 *.db
 
 bindata.go
+static/uploads

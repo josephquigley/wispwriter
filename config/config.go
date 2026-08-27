@@ -193,7 +193,19 @@ type (
 		MailgunEurope  bool   `ini:"mailgun_europe"`
 	}
 
-	// UploadsCfg holds values that control user image uploads
+	// UploadsCfg holds values that control user image uploads, configured
+	// under [uploads]:
+	//
+	//	[uploads]
+	//	enabled = true
+	//	max_size_mb = 10
+	//	allowed_types = image/png,image/jpeg,image/gif
+	//
+	// enabled defaults to false, so an instance operator opts in
+	// deliberately. max_size_mb bounds a single file, not a user's total
+	// storage. allowed_types deliberately excludes SVG, which can carry
+	// script and would be a stored-XSS primitive served from the instance's
+	// own origin, and WebP, which the standard library cannot decode.
 	UploadsCfg struct {
 		Enabled      bool   `ini:"enabled"`
 		MaxSizeMB    int    `ini:"max_size_mb"`
