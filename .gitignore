@@ -13,3 +13,8 @@ bindata.go
 static/uploads
 
 .env
+
+# Production compose stack state (bind mounts)
+/data
+/dbdata
+/uploads

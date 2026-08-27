@@ -66,8 +66,8 @@ WriteFreely is now on <http://localhost:8080>.
 ```sh
 cp .env.example .env
 $EDITOR .env
-mkdir -p data db
-sudo chown -R 1000:1000 data     # the image runs as uid 1000
+mkdir -p data dbdata
+sudo chown -R 1000:1000 data     # the app image runs as uid 1000
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml run --rm app writefreely --config
 docker compose -f docker-compose.prod.yml up -d
@@ -77,6 +77,14 @@ docker compose -f docker-compose.prod.yml exec app \
 
 The database host is `db`, and everything the instance owns lives in
 `./data`.
+
+The production stack uses LinuxServer's MariaDB image. Its `PUID`/`PGID`
+settings decide who owns the files it writes into `./dbdata`, which is what
+lets the whole stack work from bind mounts without you pre-chowning the
+database directory. Its data directory is `/config/databases`, not
+`/var/lib/mysql` -- so if you ever swap it for the official `mariadb`
+image, the existing files are not where that image looks and it will not
+migrate them for you.
 
 This stack binds to `127.0.0.1:8080`, so put a reverse proxy in front of
 it and terminate TLS there.
@@ -100,7 +108,7 @@ upgrade.
 
 | Data | Where |
 |---|---|
-| Database | `./db` |
+| Database | `./dbdata` (LinuxServer layout: files sit under `./dbdata/databases`) |
 | Everything else | `./data` |
 
 Uploaded images deserve a specific note. They are written under the
