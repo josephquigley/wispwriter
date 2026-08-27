@@ -107,6 +107,8 @@ func InitRoutes(apper Apper, r *mux.Router) *mux.Router {
 	me.HandleFunc("/c/{collection}", handler.User(viewEditCollection)).Methods("GET")
 	me.HandleFunc("/c/{collection}/stats", handler.User(viewStats)).Methods("GET")
 	me.HandleFunc("/c/{collection}/subscribers", handler.User(handleViewSubscribers)).Methods("GET")
+	me.Path("/c/{collection}/pinned").Handler(csrfProtectHandler(apper.App(), handler.User(viewPinnedPosts))).Methods("GET")
+	me.Path("/c/{collection}/pinned/{post}/{action}").Handler(csrfProtectHandler(apper.App(), handler.User(handlePinnedPostAction))).Methods("POST")
 	me.Path("/delete").Handler(csrfProtectHandler(apper.App(), handler.User(handleUserDelete))).Methods("POST")
 	me.HandleFunc("/posts", handler.Redirect("/me/posts/", UserLevelUser)).Methods("GET")
 	me.HandleFunc("/posts/", handler.User(viewArticles)).Methods("GET")

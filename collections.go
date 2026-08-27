@@ -68,7 +68,26 @@ type (
 		URL         string         `json:"url,omitempty"`
 
 		Monetization string `json:"monetization_pointer,omitempty"`
-		Verification string `json:"verification_link"`
+		// Verifications holds the blog's rel="me" verification links, in
+		// order. The first entry is the canonical identity and is what
+		// fediverse:creator is derived from.
+		Verifications []string `json:"verification_links"`
+		// VerificationLink is the first entry of Verifications, emitted
+		// under the key a single link used to use.
+		//
+		// Deprecated: read verification_links instead. This exists so that
+		// a client written against the single-link API keeps working, and
+		// it can only ever report one of what may be several links.
+		VerificationLink string `json:"verification_link"`
+
+		// ShowSubscribeIndex controls whether the email subscribe form is
+		// rendered at the bottom of the blog's index page. It defaults to
+		// true, which is how blogs behaved before the setting existed.
+		ShowSubscribeIndex bool `json:"show_subscribe_index"`
+		// ShowSubscribePosts controls whether the email subscribe form is
+		// rendered at the end of each individual post page. It also
+		// defaults to true.
+		ShowSubscribePosts bool `json:"show_subscribe_posts"`
 
 		db       *datastore
 		hostName string
@@ -122,6 +141,9 @@ type (
 		LetterReply  *string         `schema:"letter_reply" json:"letter_reply"`
 		Visibility   *int            `schema:"visibility" json:"public"`
 		Format       *sql.NullString `schema:"format" json:"format"`
+
+		ShowSubscribeIndex *bool `schema:"show_subscribe_index" json:"show_subscribe_index"`
+		ShowSubscribePosts *bool `schema:"show_subscribe_posts" json:"show_subscribe_posts"`
 	}
 	CollectionFormat struct {
 		Format string
@@ -379,6 +401,21 @@ func (c *Collection) RenderMathJax() bool {
 	return c.db.CollectionHasAttribute(c.ID, "render_mathjax")
 }
 
+// collectionAttributeBool interprets a stored collection attribute as a
+// boolean with the given default, used for attributes whose absence must
+// mean something other than false. An unrecognized value falls back to
+// def rather than silently reading as off.
+func collectionAttributeBool(v string, def bool) bool {
+	switch v {
+	case "true", "1":
+		return true
+	case "false", "0":
+		return false
+	default:
+		return def
+	}
+}
+
 func (c *Collection) EmailSubsEnabled() bool {
 	return c.db.CollectionHasAttribute(c.ID, "email_subs")
 }
@@ -388,6 +425,15 @@ func (c *Collection) MonetizationURL() string {
 		return ""
 	}
 	return strings.Replace(c.Monetization, "$", "https://", 1)
+}
+
+// Verification returns the blog's canonical verification link -- the first
+// of its rel="me" links -- or an empty string if it has none.
+func (c *Collection) Verification() string {
+	if len(c.Verifications) == 0 {
+		return ""
+	}
+	return c.Verifications[0]
 }
 
 // DisplayDescription returns the description with rendered Markdown and HTML.
@@ -1311,6 +1357,13 @@ func existingCollection(app *App, w http.ResponseWriter, r *http.Request) error 
 		if err != nil {
 			log.Error("Couldn't parse collection update form request: %v\n", err)
 			return ErrBadFormData
+		}
+
+		// The settings form submits one verification_link_row field per
+		// link. Join them into the single newline-separated
+		// verification_link value the decoder expects.
+		if rows, ok := r.PostForm["verification_link_row"]; ok {
+			r.PostForm.Set("verification_link", serializeVerificationLinks(rows))
 		}
 
 		err = app.formDecoder.Decode(&c, r.PostForm)
