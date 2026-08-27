@@ -125,7 +125,9 @@ func handleCreateEmailSubscription(app *App, w http.ResponseWriter, r *http.Requ
 	}
 
 	if ss.Web {
-		if u != nil && u.ID == c.OwnerID {
+		// On a single-user instance the blog is served at the site root, so
+		// the canonical URL we already have is the right place to go back to.
+		if u != nil && u.ID == c.OwnerID && !app.cfg.App.SingleUser {
 			from = "/" + c.Alias + "/"
 		}
 		from += ss.Slug
@@ -253,7 +255,9 @@ func handleDeleteEmailSubscription(app *App, w http.ResponseWriter, r *http.Requ
 		if u != nil {
 			// User is logged in
 			userID = u.ID
-			if userID == c.OwnerID {
+			// See the note in handleCreateEmailSubscription: on a
+			// single-user instance the blog is served at the site root.
+			if userID == c.OwnerID && !app.cfg.App.SingleUser {
 				from = "/" + c.Alias + "/"
 			}
 		}
