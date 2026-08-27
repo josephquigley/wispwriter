@@ -27,6 +27,13 @@ const (
 
 	UserNormal UserType = "user"
 	UserAdmin           = "admin"
+
+	// DefaultUploadTypes is the default allow-list of image types accepted by
+	// the uploader. SVG is deliberately excluded: it can carry script, and
+	// serving one from the instance's own origin would be a stored-XSS
+	// primitive. WebP is excluded because decoding it would require a new
+	// dependency.
+	DefaultUploadTypes = "image/png,image/jpeg,image/gif"
 )
 
 type (
@@ -186,12 +193,20 @@ type (
 		MailgunEurope  bool   `ini:"mailgun_europe"`
 	}
 
+	// UploadsCfg holds values that control user image uploads
+	UploadsCfg struct {
+		Enabled      bool   `ini:"enabled"`
+		MaxSizeMB    int    `ini:"max_size_mb"`
+		AllowedTypes string `ini:"allowed_types"`
+	}
+
 	// Config holds the complete configuration for running a writefreely instance
 	Config struct {
 		Server       ServerCfg       `ini:"server"`
 		Database     DatabaseCfg     `ini:"database"`
 		App          AppCfg          `ini:"app"`
 		Email        EmailCfg        `ini:"email"`
+		Uploads      UploadsCfg      `ini:"uploads"`
 		SlackOauth   SlackOauthCfg   `ini:"oauth.slack"`
 		WriteAsOauth WriteAsOauthCfg `ini:"oauth.writeas"`
 		GitlabOauth  GitlabOauthCfg  `ini:"oauth.gitlab"`
@@ -216,6 +231,10 @@ func New() *Config {
 			MaxBlogs:       1,
 			Federation:     true,
 			PublicStats:    true,
+		},
+		Uploads: UploadsCfg{
+			MaxSizeMB:    10,
+			AllowedTypes: DefaultUploadTypes,
 		},
 	}
 	c.UseMySQL(true)
@@ -243,6 +262,34 @@ func (cfg *Config) UseSQLite(fresh bool) {
 // standalone server with TLS enabled.
 func (cfg *Config) IsSecureStandalone() bool {
 	return cfg.Server.Port == 443 && cfg.Server.TLSCertPath != "" && cfg.Server.TLSKeyPath != ""
+}
+
+// AllowedUploadTypes returns the MIME types the uploader accepts, parsed from
+// the comma-separated allowed_types value. An unset value falls back to the
+// default allow-list rather than accepting nothing.
+func (cfg *Config) AllowedUploadTypes() []string {
+	list := strings.TrimSpace(cfg.Uploads.AllowedTypes)
+	if list == "" {
+		list = DefaultUploadTypes
+	}
+	types := []string{}
+	for _, t := range strings.Split(list, ",") {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			types = append(types, t)
+		}
+	}
+	return types
+}
+
+// MaxUploadBytes returns the largest accepted size of a single uploaded file,
+// in bytes.
+func (cfg *Config) MaxUploadBytes() int64 {
+	mb := cfg.Uploads.MaxSizeMB
+	if mb <= 0 {
+		mb = 10
+	}
+	return int64(mb) * 1024 * 1024
 }
 
 func (ac *AppCfg) LandingPath() string {
