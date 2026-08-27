@@ -192,6 +192,12 @@ not `localhost`. A container's `localhost` is itself.
 **Permission denied writing to /data.** The production image runs as uid
 1000 and your `./data` is owned by someone else. `sudo chown -R 1000:1000 data`.
 
+**The site loads but has no styling, and `/css/.css` 404s in the browser
+console.** The config has no `theme` key. Builds from this edition fall
+back to `write`; on an unpatched WriteFreely, add `theme = write` under
+`[app]`. The interactive configurator always writes one, so this only
+happens with a hand-written config.
+
 **The container reports unhealthy but the site works.** Please report it.
 The healthcheck accepts any HTTP response as proof of life, so it should
 not false-negative on a password-protected or unconfigured instance.
