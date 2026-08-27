@@ -29,6 +29,8 @@ RUN make build \
     && make ui \
     && mkdir -p /stage/cmd/writefreely \
     && cp cmd/writefreely/writefreely /stage/cmd/writefreely/writefreely \
+    && cp docker-entrypoint.sh /stage/docker-entrypoint.sh \
+    && chmod +x /stage/docker-entrypoint.sh \
     && cp -R templates static pages keys /stage
 
 # Final image
@@ -49,12 +51,18 @@ WORKDIR /go
 # binds 0.0.0.0 rather than localhost, and point it at this image's layout.
 ENV WRITEFREELY_DOCKER=True
 ENV WRITEFREELY_DOCKER_PARENT_DIR=/go
+ENV WRITEFREELY_SERVICE_HINT=writefreely-web
 
 VOLUME /go/keys
 EXPOSE 8080
 USER daemon
 
-ENTRYPOINT ["cmd/writefreely/writefreely"]
+# The entrypoint generates keys when absent and applies pending
+# migrations, then execs the binary. Overriding CMD still works:
+# `docker run <image> cmd/writefreely/writefreely --config` reaches the
+# binary with those arguments.
+ENTRYPOINT ["/go/docker-entrypoint.sh"]
+CMD ["cmd/writefreely/writefreely"]
 
 # Accept any HTTP response as proof the server is up. Testing for a 2xx on
 # "/" reports a healthy instance as unhealthy whenever the landing page
