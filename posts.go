@@ -151,6 +151,7 @@ type (
 		IsCustomDomain  bool
 		Monetization    string
 		Verification    string
+		Verifications   []string
 		FediverseAuthor string
 		PinnedPosts     *[]PublicPost
 		IsFound         bool
@@ -1677,13 +1678,14 @@ Are you sure it was ever here?` + shortCodeNoSig,
 		tp.PinnedPosts, _ = app.db.GetPinnedPosts(coll, p.IsOwner)
 		tp.IsPinned = len(*tp.PinnedPosts) > 0 && PostsContains(tp.PinnedPosts, p)
 		tp.Monetization = coll.Monetization
-		tp.Verification = coll.Verification
+		tp.Verification = coll.Verification()
+		tp.Verifications = coll.Verifications
 		if tp.Verification != "" {
 			// Fetch info for fediverse:creator tag
-			ru, err := getRemoteUserFromURL(app, coll.Verification)
+			ru, err := getRemoteUserFromURL(app, tp.Verification)
 			if err != nil {
 				if debugging {
-					log.Info("showing rel=me tag, but no local handle for %s", coll.Verification)
+					log.Info("showing rel=me tag, but no local handle for %s", tp.Verification)
 				}
 			} else {
 				// Though we don't store handles with leading @, strip it here just in case

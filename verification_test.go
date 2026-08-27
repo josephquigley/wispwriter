@@ -39,3 +39,12 @@ func TestVerificationLinksRoundTrip(t *testing.T) {
 	assert.Equal(t, in, parseVerificationLinks(serializeVerificationLinks(in)),
 		"order must survive a round trip")
 }
+
+func TestCollectionVerificationAccessor(t *testing.T) {
+	c := &Collection{}
+	assert.Equal(t, "", c.Verification(), "no links yields empty string")
+
+	c.Verifications = []string{"https://first.example", "https://second.example"}
+	assert.Equal(t, "https://first.example", c.Verification(),
+		"the first link is the canonical identity")
+}

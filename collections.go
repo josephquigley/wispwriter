@@ -68,7 +68,10 @@ type (
 		URL         string         `json:"url,omitempty"`
 
 		Monetization string `json:"monetization_pointer,omitempty"`
-		Verification string `json:"verification_link"`
+		// Verifications holds the blog's rel="me" verification links, in
+		// order. The first entry is the canonical identity and is what
+		// fediverse:creator is derived from.
+		Verifications []string `json:"verification_links"`
 
 		db       *datastore
 		hostName string
@@ -388,6 +391,15 @@ func (c *Collection) MonetizationURL() string {
 		return ""
 	}
 	return strings.Replace(c.Monetization, "$", "https://", 1)
+}
+
+// Verification returns the blog's canonical verification link -- the first
+// of its rel="me" links -- or an empty string if it has none.
+func (c *Collection) Verification() string {
+	if len(c.Verifications) == 0 {
+		return ""
+	}
+	return c.Verifications[0]
 }
 
 // DisplayDescription returns the description with rendered Markdown and HTML.
