@@ -15,7 +15,7 @@
 					<a href="https://writefreely.org/guide/{{.OfficialVersion}}" target="guide">writer's guide</a>
 					<a href="https://developers.write.as/" title="Build on WriteFreely with our open developer API.">developers</a>
 					<a href="https://github.com/writefreely/writefreely">source code</a>
-					<a href="https://writefreely.org">writefreely {{.Version}}</a>
+					<a href="https://writefreely.org">{{.SoftwareName}} {{.Version}}</a>
 				{{end}}
 			</nav>
 			{{else}}
@@ -31,7 +31,7 @@
 						</ul>
 					</div>
 					<div class="half">
-						<h3><a href="https://writefreely.org" style="color:#444;text-transform:lowercase;">WriteFreely</a></h3>
+						<h3><a href="https://writefreely.org" style="color:#444;">{{.SoftwareName}}</a></h3>
 						<ul>
 							<li><a href="https://writefreely.org/guide/{{.OfficialVersion}}" target="guide">writer's guide</a></li>
 							<li><a href="https://developers.write.as/" title="Build on WriteFreely with our open developer API.">developers</a></li>

@@ -1,4 +1,22 @@
 &nbsp;
+
+> **This is a modified version of WriteFreely.**
+>
+> It is maintained as *WriteFreely (Untethered Edition)* and is not
+> affiliated with or endorsed by Musing Studio LLC or the WriteFreely
+> project. It is based on WriteFreely 0.17.2 and versions independently
+> from upstream, so its version numbers do not correspond to upstream
+> releases.
+>
+> Where upstream keeps the core minimal and moves features into companion
+> services, this fork brings them in-tree. Changes include in-app image
+> uploads, multiple `rel="me"` verification links, per-blog control over
+> the email subscribe form, a post management view, pinned-post
+> reordering, and container fixes.
+>
+> Source: <https://github.com/josephquigley/writefreely>
+
+&nbsp;
 <p align="center">
 	<a href="https://writefreely.org"><img src="https://writefreely.org/img/writefreely.svg" width="350px" alt="WriteFreely" /></a>
 </p>

@@ -53,7 +53,12 @@ const (
 	postsPerArchPage = 40
 
 	serverSoftware = "WriteFreely"
-	softwareURL    = "https://writefreely.org"
+	// softwareEdition names this fork wherever a person reads the product
+	// name. It deliberately does not appear in NodeInfo, the outbound
+	// User-Agent or the Server header: those identify the software to other
+	// machines, and this remains WriteFreely to them.
+	softwareEdition = "Untethered Edition"
+	softwareURL     = "https://writefreely.org"
 )
 
 var (
@@ -61,6 +66,10 @@ var (
 
 	// Software version can be set from git env using -ldflags
 	softwareVer = "0.18.0"
+	// upstreamVer is the WriteFreely release this fork is based on. The
+	// project's own documentation is versioned, so links to it must point at
+	// a release that exists upstream rather than at this fork's version.
+	upstreamVer = "0.17.2"
 
 	// DEPRECATED VARS
 	isSingleUser bool
@@ -361,9 +370,11 @@ func handleTemplatedPage(app *App, w http.ResponseWriter, r *http.Request, t *te
 
 func pageForReq(app *App, r *http.Request) page.StaticPage {
 	p := page.StaticPage{
-		AppCfg:  app.cfg.App,
-		Path:    r.URL.Path,
-		Version: "v" + softwareVer,
+		AppCfg:          app.cfg.App,
+		Path:            r.URL.Path,
+		Version:         "v" + softwareVer,
+		SoftwareName:    FormatSoftwareName(),
+		UpstreamVersion: "v" + upstreamVer,
 	}
 
 	// Use custom style, if file exists
@@ -630,7 +641,17 @@ func ConnectToDatabase(app *App) error {
 
 // FormatVersion constructs the version string for the application
 func FormatVersion() string {
-	return serverSoftware + " " + softwareVer
+	return FormatSoftwareName() + " " + softwareVer
+}
+
+// FormatSoftwareName returns the product name as a person should see it,
+// including this fork's edition. Machine-facing identifiers use
+// serverSoftware directly and are not affected.
+func FormatSoftwareName() string {
+	if softwareEdition == "" {
+		return serverSoftware
+	}
+	return serverSoftware + " (" + softwareEdition + ")"
 }
 
 // OutputVersion prints out the version of the application.

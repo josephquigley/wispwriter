@@ -20,9 +20,15 @@ import (
 type StaticPage struct {
 	// App configuration
 	config.AppCfg
-	Version   string
-	HeaderNav bool
-	CustomCSS bool
+	Version string
+	// SoftwareName is the product name as shown to people, including any
+	// fork edition.
+	SoftwareName string
+	// UpstreamVersion is the WriteFreely release this build is based on,
+	// used for links into WriteFreely's versioned documentation.
+	UpstreamVersion string
+	HeaderNav       bool
+	CustomCSS       bool
 
 	// Request values
 	Path            string
@@ -44,7 +50,14 @@ func (sp *StaticPage) SanitizeHost(cfg *config.Config) {
 	}
 }
 
+// OfficialVersion returns the version to use when linking into
+// WriteFreely's versioned documentation. A fork's own version number does
+// not exist upstream, so those links must point at the release this build
+// is based on.
 func (sp StaticPage) OfficialVersion() string {
+	if sp.UpstreamVersion != "" {
+		return sp.UpstreamVersion
+	}
 	p := strings.Split(sp.Version, "-")
 	return p[0]
 }
