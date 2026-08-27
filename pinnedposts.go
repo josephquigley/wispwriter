@@ -16,6 +16,7 @@ import (
 
 	"github.com/gorilla/csrf"
 	"github.com/gorilla/mux"
+	"github.com/writeas/impart"
 )
 
 // pinnedPostsPage is the view data for the pinned post management page.
@@ -81,4 +82,58 @@ func viewPinnedPosts(app *App, u *User, w http.ResponseWriter, r *http.Request) 
 	}
 	showUserPage(w, "collection-pinned", p)
 	return nil
+}
+
+// handlePinnedPostAction moves a pinned post up or down in the blog's
+// navigation, or unpins it. The action comes from the {action} route
+// variable. Every action redirects back to the management page.
+func handlePinnedPostAction(app *App, u *User, w http.ResponseWriter, r *http.Request) error {
+	c, err := ownedPinnedCollection(app, u, r)
+	if err != nil {
+		return err
+	}
+
+	vars := mux.Vars(r)
+	postID := vars["post"]
+	action := vars["action"]
+
+	if action != "up" && action != "down" && action != "remove" {
+		return impart.HTTPError{http.StatusNotFound, "No such action."}
+	}
+
+	// Repair any drift first, so the positions this acts on are dense, and
+	// reject anything that isn't a pinned post of this user's blog before
+	// writing at all.
+	if err := app.db.NormalizePinnedPositions(c.ID); err != nil {
+		return err
+	}
+	if _, err := app.db.pinnedPosition(c.ID, u.ID, postID); err != nil {
+		return err
+	}
+
+	if action == "remove" {
+		if err := app.db.UpdatePostPinState(false, postID, c.ID, u.ID, 0); err != nil {
+			return err
+		}
+		_ = addSessionFlash(app, w, r, "Removed that post from your blog's navigation.", nil)
+	} else {
+		neighbor, err := app.db.GetAdjacentPinnedPost(c.ID, u.ID, postID, action == "up")
+		if err != nil {
+			return err
+		}
+		// An empty neighbor means the post is already at the end it was
+		// asked to move toward. That isn't an error -- the control simply
+		// had nothing to do.
+		if neighbor != "" {
+			if err := app.db.SwapPinnedPositions(c.ID, u.ID, postID, neighbor); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := app.db.NormalizePinnedPositions(c.ID); err != nil {
+		return err
+	}
+
+	return impart.HTTPError{http.StatusFound, "/me/c/" + c.Alias + "/pinned"}
 }

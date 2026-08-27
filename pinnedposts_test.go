@@ -13,9 +13,14 @@ package writefreely
 import (
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -171,4 +176,183 @@ func TestViewPinnedPostsEmptyState(t *testing.T) {
 	_, _ = renderedRequest(t, router, "GET", "/me/c/"+coll.Alias+"/pinned", cookies)
 	rec := assertRendersCleanly(t, router, "GET", "/me/c/"+coll.Alias+"/pinned", cookies, http.StatusOK)
 	assert.Contains(t, rec.Body.String(), "no pinned posts")
+}
+
+var csrfTokenRegex = regexp.MustCompile(`name="gorilla\.csrf\.Token" value="([^"]+)"`)
+
+// pinnedPageSession loads the pinned post management page and returns the
+// cookies and CSRF token needed to POST one of its forms back, exercising
+// the real CSRF protection rather than disabling it.
+func pinnedPageSession(t *testing.T, app *App, router *mux.Router, u *User, alias string) ([]*http.Cookie, string) {
+	t.Helper()
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	rec, _ := renderedRequest(t, router, "GET", "/me/c/"+alias+"/pinned", cookies)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("load pinned page: status %d", rec.Code)
+	}
+	cookies = append(cookies, rec.Result().Cookies()...)
+
+	m := csrfTokenRegex.FindStringSubmatch(rec.Body.String())
+	if m == nil {
+		t.Fatal("pinned page did not render a CSRF token")
+	}
+	return cookies, m[1]
+}
+
+// postForm posts a form to the router with the given cookies.
+func postForm(t *testing.T, router *mux.Router, path string, cookies []*http.Cookie, form url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+
+	req := httptest.NewRequest("POST", path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// gorilla/csrf assumes requests are served over TLS and requires a
+	// same-origin Referer, which a real browser submitting the form sends.
+	req.Header.Set("Referer", "https://"+req.Host+path)
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+// postPinnedAction performs one of the pinned post actions with a valid CSRF
+// token.
+func postPinnedAction(t *testing.T, app *App, router *mux.Router, u *User, alias, postID, action string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	cookies, token := pinnedPageSession(t, app, router, u, alias)
+	return postForm(t, router, "/me/c/"+alias+"/pinned/"+postID+"/"+action, cookies, url.Values{"gorilla.csrf.Token": {token}})
+}
+
+func TestMovePinnedPostDown(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "pinmover")
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2, 3})
+
+	rec := postPinnedAction(t, app, router, u, coll.Alias, ids[0], "down")
+	assert.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "/me/c/"+coll.Alias+"/pinned", rec.Header().Get("Location"))
+
+	gotIDs, gotPos := pinnedPositions(t, app, coll.ID)
+	assert.Equal(t, []string{ids[1], ids[0], ids[2]}, gotIDs)
+	assert.Equal(t, []int64{1, 2, 3}, gotPos)
+}
+
+func TestMovePinnedPostUp(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "pinmoverup")
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2, 3})
+
+	rec := postPinnedAction(t, app, router, u, coll.Alias, ids[2], "up")
+	assert.Equal(t, http.StatusFound, rec.Code)
+
+	gotIDs, gotPos := pinnedPositions(t, app, coll.ID)
+	assert.Equal(t, []string{ids[0], ids[2], ids[1]}, gotIDs)
+	assert.Equal(t, []int64{1, 2, 3}, gotPos)
+}
+
+func TestMovePinnedPostUpAtTopIsNoOp(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "pintop")
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2, 3})
+
+	rec := postPinnedAction(t, app, router, u, coll.Alias, ids[0], "up")
+	assert.Equal(t, http.StatusFound, rec.Code)
+
+	gotIDs, gotPos := pinnedPositions(t, app, coll.ID)
+	assert.Equal(t, ids, gotIDs, "order is unchanged")
+	assert.Equal(t, []int64{1, 2, 3}, gotPos)
+}
+
+func TestMovePinnedPostDownAtBottomIsNoOp(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "pinbottom")
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2, 3})
+
+	rec := postPinnedAction(t, app, router, u, coll.Alias, ids[2], "down")
+	assert.Equal(t, http.StatusFound, rec.Code)
+
+	gotIDs, gotPos := pinnedPositions(t, app, coll.ID)
+	assert.Equal(t, ids, gotIDs, "order is unchanged")
+	assert.Equal(t, []int64{1, 2, 3}, gotPos)
+}
+
+func TestUnpinFromManagementPage(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "pinremover")
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2, 3})
+
+	rec := postPinnedAction(t, app, router, u, coll.Alias, ids[1], "remove")
+	assert.Equal(t, http.StatusFound, rec.Code)
+
+	gotIDs, gotPos := pinnedPositions(t, app, coll.ID)
+	assert.Equal(t, []string{ids[0], ids[2]}, gotIDs)
+	assert.Equal(t, []int64{1, 2}, gotPos, "remaining positions stay dense")
+}
+
+func TestPinnedActionRejectsForeignPost(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "pinactionowner")
+	_, otherColl, _ := createTemplateTestUser(t, app, "pinactionstranger")
+
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2})
+	otherIDs := seedPinnedPosts(t, app, otherColl, []int64{1})
+
+	rec := postPinnedAction(t, app, router, u, coll.Alias, otherIDs[0], "up")
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	gotIDs, gotPos := pinnedPositions(t, app, coll.ID)
+	assert.Equal(t, ids, gotIDs)
+	assert.Equal(t, []int64{1, 2}, gotPos)
+
+	otherGotIDs, otherGotPos := pinnedPositions(t, app, otherColl.ID)
+	assert.Equal(t, otherIDs, otherGotIDs)
+	assert.Equal(t, []int64{1}, otherGotPos)
+}
+
+func TestPinnedActionRejectsNonOwner(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	_, coll, _ := createTemplateTestUser(t, app, "pinvictim")
+	intruder, intruderColl, _ := createTemplateTestUser(t, app, "pinattacker")
+
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2})
+	seedPinnedPosts(t, app, intruderColl, []int64{1})
+
+	cookies, token := pinnedPageSession(t, app, router, intruder, intruderColl.Alias)
+	rec := postForm(t, router, "/me/c/"+coll.Alias+"/pinned/"+ids[0]+"/down", cookies, url.Values{"gorilla.csrf.Token": {token}})
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	gotIDs, gotPos := pinnedPositions(t, app, coll.ID)
+	assert.Equal(t, ids, gotIDs)
+	assert.Equal(t, []int64{1, 2}, gotPos)
+}
+
+func TestPinnedActionRequiresCSRF(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "pincsrf")
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2})
+
+	cookies, _ := pinnedPageSession(t, app, router, u, coll.Alias)
+	rec := postForm(t, router, "/me/c/"+coll.Alias+"/pinned/"+ids[0]+"/down", cookies, url.Values{})
+	assert.True(t, rec.Code < 200 || rec.Code >= 300, "a POST without a CSRF token must be rejected, got %d", rec.Code)
+
+	gotIDs, gotPos := pinnedPositions(t, app, coll.ID)
+	assert.Equal(t, ids, gotIDs, "nothing may be reordered without a token")
+	assert.Equal(t, []int64{1, 2}, gotPos)
+}
+
+func TestPinnedActionRejectsGET(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "pinget")
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2})
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	rec, _ := renderedRequest(t, router, "GET", "/me/c/"+coll.Alias+"/pinned/"+ids[0]+"/down", cookies)
+	assert.True(t, rec.Code == http.StatusMethodNotAllowed || rec.Code == http.StatusNotFound, "a GET must never reorder, got %d", rec.Code)
+
+	gotIDs, gotPos := pinnedPositions(t, app, coll.ID)
+	assert.Equal(t, ids, gotIDs, "a GET may not reorder anything")
+	assert.Equal(t, []int64{1, 2}, gotPos)
 }
