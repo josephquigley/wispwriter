@@ -78,6 +78,14 @@ docker compose -f docker-compose.prod.yml exec app \
 The database host is `db`, and everything the instance owns lives in
 `./data`.
 
+The production stack uses LinuxServer's MariaDB image. Its `PUID`/`PGID`
+settings decide who owns the files it writes into `./db`, which is what
+lets the whole stack work from bind mounts without you pre-chowning the
+database directory. Its data directory is `/config/databases`, not
+`/var/lib/mysql` -- so if you ever swap it for the official `mariadb`
+image, the existing files are not where that image looks and it will not
+migrate them for you.
+
 This stack binds to `127.0.0.1:8080`, so put a reverse proxy in front of
 it and terminate TLS there.
 
@@ -100,7 +108,7 @@ upgrade.
 
 | Data | Where |
 |---|---|
-| Database | `./db` |
+| Database | `./db` (LinuxServer layout: files sit under `./db/databases`) |
 | Everything else | `./data` |
 
 Uploaded images deserve a specific note. They are written under the
