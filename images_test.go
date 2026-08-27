@@ -205,11 +205,21 @@ func ageImage(t *testing.T, app *App, id string, hours int) {
 // directory in a temp dir, so uploaded files never touch the repository.
 func newImageTestApp(t *testing.T) (*App, *mux.Router, *User, []*http.Cookie) {
 	t.Helper()
+	return newImageTestAppWith(t, nil)
+}
+
+// newImageTestAppWith is newImageTestApp with a chance to adjust the
+// configuration, for tests that care where uploads are kept.
+func newImageTestAppWith(t *testing.T, mutate func(cfg *config.Config)) (*App, *mux.Router, *User, []*http.Cookie) {
+	t.Helper()
 	staticDir := t.TempDir()
 	app, router := newTemplateTestApp(t, func(cfg *config.Config) {
 		cfg.Server.StaticParentDir = staticDir
 		cfg.Uploads.Enabled = true
 		cfg.Uploads.MaxSizeMB = 1
+		if mutate != nil {
+			mutate(cfg)
+		}
 	})
 	u, _, _ := createTemplateTestUser(t, app, "uploader")
 	return app, router, u, []*http.Cookie{loginCookie(t, app, u)}
@@ -698,4 +708,70 @@ func TestDeletePostEndpointCleansUpImages(t *testing.T) {
 	_, err = app.db.GetPostImage(imgID)
 	assert.Error(t, err, "deleting a post must clean up the images only it used")
 	assert.Equal(t, 0, countUploadedFiles(t, app))
+}
+
+// TestUploadServedFromConfiguredDir covers the serving half of a
+// relocated uploads directory. Storage and serving are configured
+// separately, so moving the files without moving the file server would
+// store them successfully and then 404 every one.
+func TestUploadServedFromConfiguredDir(t *testing.T) {
+	dir := t.TempDir()
+	app, router, _, cookies := newImageTestAppWith(t, func(cfg *config.Config) {
+		cfg.Uploads.Dir = dir
+	})
+
+	padReq := httptest.NewRequest("GET", "/me/new", nil)
+	for _, c := range cookies {
+		padReq.AddCookie(c)
+	}
+	padRec := httptest.NewRecorder()
+	router.ServeHTTP(padRec, padReq)
+	m := regexp.MustCompile(`csrfToken: "([^"]*)"`).FindStringSubmatch(padRec.Body.String())
+	assert.NotNil(t, m)
+	if m == nil {
+		return
+	}
+
+	req := uploadRequest(t, "a.png", "image/png", tinyPNG(t))
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	for _, c := range padRec.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	req.Header.Set("X-CSRF-Token", m[1])
+	req.Header.Set("Origin", "http://example.com")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var res struct {
+		Data struct {
+			URL string `json:"url"`
+		} `json:"data"`
+	}
+	assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+
+	// Written where we asked, not under the static tree.
+	assert.Equal(t, 1, countFilesUnder(t, dir))
+	assert.Equal(t, 0, countFilesUnder(t, filepath.Join(app.cfg.Server.StaticParentDir, staticDir, uploadsDir)))
+
+	// And served from there.
+	getRec := httptest.NewRecorder()
+	router.ServeHTTP(getRec, httptest.NewRequest("GET", res.Data.URL, nil))
+	assert.Equal(t, http.StatusOK, getRec.Code, "a relocated upload must still serve")
+	assert.Equal(t, "nosniff", getRec.Header().Get("X-Content-Type-Options"))
+}
+
+func countFilesUnder(t *testing.T, root string) int {
+	t.Helper()
+	n := 0
+	_ = filepath.Walk(root, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && info != nil && !info.IsDir() {
+			n++
+		}
+		return nil
+	})
+	return n
 }

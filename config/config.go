@@ -201,14 +201,20 @@ type (
 	// deliberately. max_size_mb bounds a single file, not a user's total
 	// storage.
 	//
+	// dir is where uploaded files are written. Left empty they go under
+	// the static asset tree, which keeps a default install self-contained.
+	// Packaged installs want them somewhere writable and separate from the
+	// read-only assets, such as /var/lib/writefreely/uploads.
+	//
 	// Which image types are accepted is not configurable: it is fixed by
 	// the decoders compiled in, in decodeAndReencode. SVG is excluded
 	// because it can carry script and would be a stored-XSS primitive
 	// served from the instance's own origin, and WebP because decoding it
 	// would require a dependency.
 	UploadsCfg struct {
-		Enabled   bool `ini:"enabled"`
-		MaxSizeMB int  `ini:"max_size_mb"`
+		Enabled   bool   `ini:"enabled"`
+		MaxSizeMB int    `ini:"max_size_mb"`
+		Dir       string `ini:"dir"`
 	}
 
 	// Config holds the complete configuration for running a writefreely instance

@@ -32,10 +32,14 @@ func (app *App) InitStaticRoutes(r *mux.Router) {
 	app.shttp = http.NewServeMux()
 	app.shttp.Handle("/", fs)
 
-	// Uploaded images are served by the same file server, but with headers
-	// that stop a browser from ever treating one as anything but an image.
+	// Uploaded images are served with headers that stop a browser from
+	// ever treating one as anything but an image. They are served from
+	// their own root rather than the static one, because the two are only
+	// the same directory when no upload directory is configured.
 	if app.cfg.Uploads.Enabled {
-		r.PathPrefix("/" + uploadsDir + "/").Handler(uploadHeaders(fs))
+		uploads := http.FileServer(http.Dir(app.uploadsRoot()))
+		uploads = cacheControl(http.StripPrefix("/"+uploadsDir+"/", uploads))
+		r.PathPrefix("/" + uploadsDir + "/").Handler(uploadHeaders(uploads))
 	}
 
 	r.PathPrefix("/").Handler(fs)

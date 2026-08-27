@@ -167,6 +167,9 @@ func imagePath(ownerID int64, sum, ext string) string {
 
 // uploadsRoot returns the directory uploaded images are written to.
 func (app *App) uploadsRoot() string {
+	if dir := strings.TrimSpace(app.cfg.Uploads.Dir); dir != "" {
+		return dir
+	}
 	return filepath.Join(app.cfg.Server.StaticParentDir, staticDir, uploadsDir)
 }
 

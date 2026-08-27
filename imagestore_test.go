@@ -20,6 +20,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -275,4 +276,23 @@ func TestEnsureUploadsWritable(t *testing.T) {
 	assert.NoError(t, os.Chmod(app.uploadsRoot(), 0500))
 	t.Cleanup(func() { os.Chmod(app.uploadsRoot(), 0755) })
 	assert.Error(t, app.ensureUploadsWritable())
+}
+
+func TestUploadsRootHonoursConfiguredDir(t *testing.T) {
+	cfg := config.New()
+	cfg.Server.StaticParentDir = "/srv/wf"
+
+	// Unset, uploads live under the static tree, which keeps a default
+	// install self-contained.
+	app := &App{cfg: cfg}
+	assert.Equal(t, filepath.Join("/srv/wf", staticDir, uploadsDir), app.uploadsRoot())
+
+	// Set, they go exactly where the operator asked, which is how a
+	// packaged install keeps user content out of the read-only asset tree.
+	cfg.Uploads.Dir = "/var/lib/writefreely/uploads"
+	assert.Equal(t, "/var/lib/writefreely/uploads", app.uploadsRoot())
+
+	cfg.Uploads.Dir = "  /var/lib/writefreely/uploads  "
+	assert.Equal(t, "/var/lib/writefreely/uploads", app.uploadsRoot(),
+		"a value with stray whitespace should not create a directory named with it")
 }
