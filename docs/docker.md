@@ -78,13 +78,22 @@ docker compose -f docker-compose.prod.yml exec app \
 The database host is `db`, and everything the instance owns lives in
 `./data`.
 
-The production stack uses LinuxServer's MariaDB image. Its `PUID`/`PGID`
-settings decide who owns the files it writes into `./dbdata`, which is what
-lets the whole stack work from bind mounts without you pre-chowning the
+Both stacks use LinuxServer's MariaDB image. Its `PUID`/`PGID`
+settings decide who owns the files it writes, which is what lets the
+production stack work from bind mounts without you pre-chowning the
 database directory. Its data directory is `/config/databases`, not
 `/var/lib/mysql` -- so if you ever swap it for the official `mariadb`
 image, the existing files are not where that image looks and it will not
 migrate them for you.
+
+That image boots through s6 init and expects to start the server itself,
+so do not add a `command:` override to either database service. It
+already defaults to `utf8mb4` / `utf8mb4_general_ci`; anything else goes
+in `/config/custom.cnf`, which it writes on first start.
+
+Note that `schema.sql` declares `DEFAULT CHARSET=latin1` on every table
+it creates, so the server-level character set matters less than it looks
+-- the application connects with `charset=utf8mb4` regardless.
 
 This stack binds to `127.0.0.1:8080`, so put a reverse proxy in front of
 it and terminate TLS there.
@@ -99,7 +108,7 @@ upgrade.
 
 | Data | Where |
 |---|---|
-| Database | `db-data` named volume |
+| Database | `db-data` named volume (mounted at `/config`, LinuxServer layout) |
 | Encryption keys | `web-keys` named volume |
 | Configuration | `./config.ini` bind mount |
 | Uploaded images | `web-uploads` named volume |
