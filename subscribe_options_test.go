@@ -152,3 +152,37 @@ func TestIndexSubscribeButtonRespectsToggle(t *testing.T) {
 	rec, _ = renderedRequest(t, router, "GET", "/"+coll.Alias+"/", nil)
 	assert.NotContains(t, rec.Body.String(), `id="subscribe-btn"`, "hidden when the toggle is off")
 }
+
+func TestPostPageSubscribeButtonRespectsToggle(t *testing.T) {
+	app, router := newSubscribeTestApp(t, nil)
+	u, coll, post := createTemplateTestUser(t, app, "posttoggle")
+
+	enableEmailSubs(t, app, u, coll)
+	path := "/" + coll.Alias + "/" + post.Slug.String
+
+	rec, _ := renderedRequest(t, router, "GET", path, nil)
+	assert.Contains(t, rec.Body.String(), `id="subscribe-btn"`, "on by default")
+
+	setSubscribeToggles(t, app, u, coll, true, false)
+
+	rec, _ = renderedRequest(t, router, "GET", path, nil)
+	assert.NotContains(t, rec.Body.String(), `id="subscribe-btn"`, "hidden when the toggle is off")
+}
+
+func TestChorusPostPageSubscribeButtonRespectsToggle(t *testing.T) {
+	app, router := newSubscribeTestApp(t, func(cfg *config.Config) {
+		cfg.App.Chorus = true
+	})
+	u, coll, post := createTemplateTestUser(t, app, "chorustoggle")
+
+	enableEmailSubs(t, app, u, coll)
+	path := "/" + coll.Alias + "/" + post.Slug.String
+
+	rec, _ := renderedRequest(t, router, "GET", path, nil)
+	assert.Contains(t, rec.Body.String(), `id="subscribe-btn"`, "on by default")
+
+	setSubscribeToggles(t, app, u, coll, true, false)
+
+	rec, _ = renderedRequest(t, router, "GET", path, nil)
+	assert.NotContains(t, rec.Body.String(), `id="subscribe-btn"`, "hidden when the toggle is off")
+}
