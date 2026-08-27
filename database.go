@@ -877,7 +877,7 @@ func (db *datastore) GetCollectionBy(condition string, value interface{}) (*Coll
 	c.Format = format.String
 	c.Public = c.IsPublic()
 	c.Monetization = db.GetCollectionAttribute(c.ID, "monetization_pointer")
-	c.Verification = db.GetCollectionAttribute(c.ID, "verification_link")
+	c.Verifications = parseVerificationLinks(db.GetCollectionAttribute(c.ID, "verification_link"))
 
 	c.db = db
 
