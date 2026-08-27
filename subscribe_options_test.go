@@ -12,6 +12,8 @@ package writefreely
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -268,4 +270,58 @@ func TestTogglingDoesNotAffectSubscribers(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, after, 1, "toggling placement must not touch the subscriber list")
 	assert.Equal(t, before[0].Email, after[0].Email)
+}
+
+func TestSettingsShowsSubscribeToggles(t *testing.T) {
+	app, router := newSubscribeTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "subsettings")
+
+	enableEmailSubs(t, app, u, coll)
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	rec, _ := renderedRequest(t, router, "GET", "/me/c/"+coll.Alias, cookies)
+	assert.Contains(t, rec.Body.String(), `name="show_subscribe_index"`)
+	assert.Contains(t, rec.Body.String(), `name="show_subscribe_posts"`)
+}
+
+// postForm submits a form-encoded POST through the router, the way the blog
+// customization page does.
+func postForm(t *testing.T, router *mux.Router, path string, values url.Values, cookies []*http.Cookie) *httptest.ResponseRecorder {
+	t.Helper()
+
+	req := httptest.NewRequest("POST", path, strings.NewReader(values.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	return rec
+}
+
+func TestUncheckedToggleStoresFalse(t *testing.T) {
+	app, router := newSubscribeTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "uncheckedtoggle")
+
+	enableEmailSubs(t, app, u, coll)
+	setSubscribeToggles(t, app, u, coll, true, true)
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	// This is exactly what the customization form submits: the hidden input
+	// always, and the checkbox's own value only when it's checked. The index
+	// box is unchecked here, the posts box is checked.
+	rec := postForm(t, router, "/api/collections/"+coll.Alias, url.Values{
+		"web":                  {"1"},
+		"title":                {coll.Title},
+		"email_subs":           {"on"},
+		"show_subscribe_index": {"false"},
+		"show_subscribe_posts": {"false", "true"},
+	}, cookies)
+	assert.Less(t, rec.Code, 400, "form submission succeeded")
+
+	loaded, err := app.db.GetCollection(coll.Alias)
+	assert.NoError(t, err)
+	assert.False(t, loaded.ShowSubscribeIndex, "an unchecked box must store false, not be ignored")
+	assert.True(t, loaded.ShowSubscribePosts, "a checked box must win over its hidden default")
 }
