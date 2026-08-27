@@ -126,3 +126,30 @@ func (db *datastore) pinnedPosition(collID, ownerID int64, postID string) (int64
 	}
 	return pos, nil
 }
+
+// GetAdjacentPinnedPost returns the ID of the pinned post immediately before
+// (up) or after (down) the given post in the collection's navigation order,
+// or an empty string if the post is already at that end. Like
+// SwapPinnedPositions, it only considers posts of that collection owned by
+// ownerID.
+func (db *datastore) GetAdjacentPinnedPost(collID, ownerID int64, postID string, up bool) (string, error) {
+	pos, err := db.pinnedPosition(collID, ownerID, postID)
+	if err != nil {
+		return "", err
+	}
+
+	var neighbor string
+	if up {
+		err = db.QueryRow("SELECT id FROM posts WHERE collection_id = ? AND owner_id = ? AND pinned_position < ? ORDER BY pinned_position DESC LIMIT 1", collID, ownerID, pos).Scan(&neighbor)
+	} else {
+		err = db.QueryRow("SELECT id FROM posts WHERE collection_id = ? AND owner_id = ? AND pinned_position > ? ORDER BY pinned_position ASC LIMIT 1", collID, ownerID, pos).Scan(&neighbor)
+	}
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		log.Error("Failed getting pinned post next to %s: %v", postID, err)
+		return "", err
+	}
+	return neighbor, nil
+}
