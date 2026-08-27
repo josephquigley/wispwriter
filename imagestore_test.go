@@ -24,8 +24,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var defaultAllowed = []string{"image/png", "image/jpeg", "image/gif"}
-
 // tinyPNG returns the bytes of a valid 2x2 PNG.
 func tinyPNG(t *testing.T) []byte {
 	t.Helper()
@@ -89,45 +87,38 @@ func TestSniffImageType(t *testing.T) {
 	assert.NotContains(t, sniffImageType([]byte("<html><body>hi</body></html>")), "image/")
 }
 
-func TestDecodeAndReencodeRejectsHTMLNamedAsPNG(t *testing.T) {
-	_, _, _, err := decodeAndReencode([]byte("<html><script>alert(1)</script></html>"), defaultAllowed)
+func TestPrepareUploadRejectsHTMLNamedAsPNG(t *testing.T) {
+	_, _, _, err := prepareUpload([]byte("<html><script>alert(1)</script></html>"))
 	assert.ErrorIs(t, err, errUnsupportedImageType,
 		"content, not the filename, decides the type")
 }
 
-func TestDecodeAndReencodeRejectsSVG(t *testing.T) {
-	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)
-	_, _, _, err := decodeAndReencode(svg, defaultAllowed)
-	assert.ErrorIs(t, err, errUnsupportedImageType,
-		"SVG is script-bearing and must never be stored")
-}
-
-func TestDecodeAndReencodeRejectsWebP(t *testing.T) {
+func TestPrepareUploadRejectsWebP(t *testing.T) {
 	// A minimal RIFF/WEBP header is enough: we must refuse it rather than
 	// pulling in golang.org/x/image to decode it.
 	webp := append([]byte("RIFF\x00\x00\x00\x00WEBPVP8 "), make([]byte, 32)...)
-	_, _, _, err := decodeAndReencode(webp, defaultAllowed)
+	_, _, _, err := prepareUpload(webp)
 	assert.ErrorIs(t, err, errUnsupportedImageType)
 }
 
-func TestDecodeAndReencodeAcceptsPNG(t *testing.T) {
-	out, mime, ext, err := decodeAndReencode(tinyPNG(t), defaultAllowed)
+func TestPrepareUploadAcceptsPNG(t *testing.T) {
+	out, mime, ext, err := prepareUpload(tinyPNG(t))
 	assert.NoError(t, err)
 	assert.Equal(t, "image/png", mime)
 	assert.Equal(t, "png", ext)
 	assert.Equal(t, "image/png", sniffImageType(out), "output must still be a PNG")
 }
 
-func TestDecodeAndReencodeAcceptsJPEG(t *testing.T) {
-	out, mime, ext, err := decodeAndReencode(tinyJPEG(t), defaultAllowed)
+func TestPrepareUploadAcceptsJPEG(t *testing.T) {
+	out, mime, ext, err := prepareUpload(tinyJPEG(t))
 	assert.NoError(t, err)
 	assert.Equal(t, "image/jpeg", mime)
 	assert.Equal(t, "jpg", ext)
 	assert.Equal(t, "image/jpeg", sniffImageType(out))
 }
 
-func TestDecodeAndReencodeKeepsGIFAnimation(t *testing.T) {
-	out, mime, ext, err := decodeAndReencode(animatedGIF(t), defaultAllowed)
+func TestPrepareUploadKeepsGIFAnimation(t *testing.T) {
+	out, mime, ext, err := prepareUpload(animatedGIF(t))
 	assert.NoError(t, err)
 	assert.Equal(t, "image/gif", mime)
 	assert.Equal(t, "gif", ext)
@@ -137,15 +128,30 @@ func TestDecodeAndReencodeKeepsGIFAnimation(t *testing.T) {
 	assert.Len(t, g.Image, 2, "every frame of an animated GIF must survive re-encoding")
 }
 
-func TestDecodeAndReencodeHonoursAllowList(t *testing.T) {
-	_, _, _, err := decodeAndReencode(tinyPNG(t), []string{"image/jpeg"})
-	assert.ErrorIs(t, err, errUnsupportedImageType,
-		"a type left off the allow-list must be refused even though we can decode it")
+func TestPrepareUploadAcceptsOnlyBuiltInTypes(t *testing.T) {
+	// The accepted set is fixed by the decoders compiled in, not by
+	// configuration, so that no deployment can widen it into a format the
+	// re-encode step cannot sanitize.
+	for _, c := range []struct {
+		name string
+		in   []byte
+		mime string
+	}{
+		{"png", tinyPNG(t), "image/png"},
+		{"jpeg", tinyJPEG(t), "image/jpeg"},
+		{"gif", animatedGIF(t), "image/gif"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, mime, _, err := prepareUpload(c.in)
+			assert.NoError(t, err)
+			assert.Equal(t, c.mime, mime)
+		})
+	}
 }
 
-func TestDecodeAndReencodeRejectsTruncatedImage(t *testing.T) {
+func TestPrepareUploadRejectsTruncatedImage(t *testing.T) {
 	full := tinyPNG(t)
-	_, _, _, err := decodeAndReencode(full[:len(full)/2], defaultAllowed)
+	_, _, _, err := prepareUpload(full[:len(full)/2])
 	assert.ErrorIs(t, err, errUnsupportedImageType,
 		"bytes that sniff as an image but will not decode are not stored")
 }
@@ -156,7 +162,7 @@ func TestReencodeStripsMetadata(t *testing.T) {
 	assert.True(t, bytes.Contains(withExif, []byte("Exif")), "fixture must actually contain Exif")
 	assert.Equal(t, "image/jpeg", sniffImageType(withExif), "fixture must still be a JPEG")
 
-	out, _, _, err := decodeAndReencode(withExif, defaultAllowed)
+	out, _, _, err := prepareUpload(withExif)
 	assert.NoError(t, err)
 	assert.False(t, bytes.Contains(out, []byte("Exif")),
 		"re-encoding must discard camera metadata, which routinely includes GPS coordinates")
@@ -172,4 +178,71 @@ func TestImagePathIsServerDerived(t *testing.T) {
 
 func TestSha256Hex(t *testing.T) {
 	assert.Equal(t, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", sha256Hex([]byte("hello")))
+}
+
+func TestPrepareUploadAcceptsSVG(t *testing.T) {
+	svg := []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>`)
+	out, mime, ext, err := prepareUpload(svg)
+	assert.NoError(t, err)
+	assert.Equal(t, svgMIME, mime)
+	assert.Equal(t, "svg", ext)
+	// SVG is a document, not a bitmap, so it is stored exactly as uploaded
+	// rather than decoded and re-encoded.
+	assert.Equal(t, svg, out)
+}
+
+func TestLooksLikeSVG(t *testing.T) {
+	yes := [][]byte{
+		[]byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`),
+		[]byte(`  <SVG xmlns="http://www.w3.org/2000/svg"></SVG>`),
+		[]byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>`),
+		[]byte(`<!-- a comment --><svg/>`),
+		[]byte("\xef\xbb\xbf<svg/>"),
+	}
+	for _, b := range yes {
+		assert.True(t, looksLikeSVG(b), "%q", string(b))
+	}
+
+	no := [][]byte{
+		[]byte(`<html><script>alert(1)</script></html>`),
+		[]byte(`<?xml version="1.0"?><rss><channel/></rss>`),
+		[]byte("plain text"),
+		{},
+	}
+	for _, b := range no {
+		assert.False(t, looksLikeSVG(b), "%q", string(b))
+	}
+}
+
+// TestPrepareUploadStillRejectsNonSVGXML guards the SVG path from becoming
+// a way to store arbitrary XML.
+func TestPrepareUploadStillRejectsNonSVGXML(t *testing.T) {
+	_, _, _, err := prepareUpload([]byte(`<?xml version="1.0"?><rss><channel/></rss>`))
+	assert.ErrorIs(t, err, errUnsupportedImageType)
+}
+
+// TestExtForMIMEMatchesPrepareUpload guards the mapping that the stored
+// path and the public URL both depend on. They are built independently, so
+// a format accepted by prepareUpload but unknown here was written to disk
+// under one name and served under another, giving a 404.
+func TestExtForMIMEMatchesPrepareUpload(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []byte
+	}{
+		{"png", tinyPNG(t)},
+		{"jpeg", tinyJPEG(t)},
+		{"gif", animatedGIF(t)},
+		{"svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, mime, ext, err := prepareUpload(c.in)
+			assert.NoError(t, err)
+			assert.Equal(t, ext, extForMIME(mime),
+				"the URL's extension must match the one the file is stored under")
+			assert.Equal(t, c.name == "jpeg" && ext == "jpg" || ext == c.name, true,
+				"unexpected extension %q for %s", ext, c.name)
+		})
+	}
 }
