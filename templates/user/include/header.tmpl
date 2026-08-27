@@ -17,6 +17,7 @@
 				</nav>
 				<nav class="tabs">
 					<a href="/me/c/{{.UserPage.Username}}" {{if and (hasPrefix .Path "/me/c/") (hasSuffix .Path .UserPage.Username)}}class="selected"{{end}}>Customize</a>
+					<a href="/me/c/{{.UserPage.Username}}/posts" {{if hasSuffix .Path "/posts"}}class="selected"{{end}}>Posts</a>
 					<a href="/me/c/{{.UserPage.Username}}/stats" {{if hasSuffix .Path "/stats"}}class="selected"{{end}}>Stats</a>
 					<a href="/me/c/{{.UserPage.Username}}/subscribers" {{if hasSuffix .Path "/subscribers"}}class="selected"{{end}}>Subscribers</a>
 					<a href="/me/posts/"{{if eq .Path "/me/posts/"}} class="selected"{{end}}>Drafts</a>
