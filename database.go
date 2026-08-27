@@ -137,6 +137,15 @@ type writestore interface {
 	GetUsersInvitedCount(id string) int64
 	CreateInvitedUser(inviteID string, userID int64) error
 
+	CreatePostImage(ownerID int64, sum, filename, mime string, size int) (*PostImage, error)
+	GetPostImage(imgID string) (*PostImage, error)
+	GetPostImageBySum(ownerID int64, sum string) (*PostImage, error)
+	GetImagesForPost(postID string) (*[]PostImage, error)
+	AttachImagesToPost(ownerID int64, postID string, imageIDs []string) error
+	DeletePostImage(imgID string) error
+	CountPostsReferencingImage(url, excludingPostID string) (int, error)
+	GetOrphanedImages(olderThanHours int) (*[]PostImage, error)
+
 	GetDynamicContent(id string) (*instanceContent, error)
 	UpdateDynamicContent(id, title, content, contentType string) error
 	GetAllUsers(page uint) (*[]User, error)

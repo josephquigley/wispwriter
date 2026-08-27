@@ -440,6 +440,11 @@ func Initialize(apper Apper, debug bool) (*App, error) {
 		log.Info("[jobs] Not starting publish jobs queue: no email provider is configured.")
 	}
 
+	if apper.App().cfg.Uploads.Enabled {
+		log.Info("Starting orphaned image sweep...")
+		go startOrphanImageSweep(apper.App())
+	}
+
 	// Handle local timeline, if enabled
 	if apper.App().cfg.App.LocalTimeline {
 		log.Info("Initializing local timeline...")
