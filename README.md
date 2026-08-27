@@ -4,12 +4,8 @@
 Not affiliated with or endorsed by Musing Studio LLC or the WriteFreely
 project.
 
-Source for this edition: **<https://github.com/josephquigley/writefreely-colophon-edition>**
-
-Based on **WriteFreely 0.17.2**. This edition versions independently, so its
-version numbers do not correspond to upstream releases — 0.18.0 here is not
-upstream's 0.18.0. Links to WriteFreely's documentation from within the
-application point at 0.17.2, the release this is built from.
+This edition versions independently of upstream, so its version numbers do
+not correspond to WriteFreely releases.
 
 Upstream keeps the core deliberately minimal and moves features out into
 companion services — image hosting, for instance, lives on a separate site
