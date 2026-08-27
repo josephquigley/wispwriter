@@ -1,34 +1,63 @@
-FROM golang:alpine AS build
+# Build image
+FROM golang:1.25-alpine3.22 AS build
+
+RUN apk -U upgrade \
+    && apk add --no-cache nodejs npm make g++ git sqlite-dev patch \
+    && npm install -g less less-plugin-clean-css
+
+WORKDIR /go/src/github.com/writefreely/writefreely
+
+# Enable the legacy OpenSSL provider. Appended, never overwritten:
+# replacing this file discards the system's own OpenSSL configuration.
+COPY ossl_legacy.cnf .
+RUN cat ossl_legacy.cnf >> /etc/ssl/openssl.cnf
+
+ENV NODE_OPTIONS=--openssl-legacy-provider
+
+# Resolve modules before copying the source so editing a .go file doesn't
+# invalidate the dependency layer.
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN make build && make ui
+
+# Final image
+FROM alpine:3.22
 
 LABEL org.opencontainers.image.source="https://github.com/writefreely/writefreely"
 LABEL org.opencontainers.image.description="WriteFreely is a clean, minimalist publishing platform made for writers. Start a blog, share knowledge within your organization, or build a community around the shared act of writing."
+LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
-RUN apk update --no-cache && \
-	apk upgrade --no-cache && \
-	apk add --no-cache nodejs npm make g++ git sqlite-dev patch && \
-	npm install -g less less-plugin-clean-css && \
-	mkdir -p /go/src/github.com/writefreely/writefreely
+RUN apk -U upgrade \
+    && apk add --no-cache openssl ca-certificates \
+    && mkdir -p /usr/share/writefreely /data \
+    && addgroup -g 1000 writefreely \
+    && adduser -u 1000 -G writefreely -h /data -D writefreely \
+    && chown -R writefreely:writefreely /data
 
-COPY . /go/src/github.com/writefreely/writefreely
-WORKDIR /go/src/github.com/writefreely/writefreely
-ENV NODE_OPTIONS=--openssl-legacy-provider
-RUN cat ossl_legacy.cnf >> /etc/ssl/openssl.cnf && \
-	make build && \
-	make ui
-
-FROM alpine
-
-RUN apk update --no-cache && \
-	apk upgrade --no-cache && \
-	apk add --no-cache openssl ca-certificates && \
-	mkdir /usr/share/writefreely
-
-COPY --from=build /go/src/github.com/writefreely/writefreely/cmd/writefreely/writefreely /usr/bin
+COPY --from=build /go/src/github.com/writefreely/writefreely/cmd/writefreely/writefreely /usr/bin/writefreely
 COPY --from=build /go/src/github.com/writefreely/writefreely/pages /usr/share/writefreely/pages
 COPY --from=build /go/src/github.com/writefreely/writefreely/static /usr/share/writefreely/static
 COPY --from=build /go/src/github.com/writefreely/writefreely/templates /usr/share/writefreely/templates
 
 ENV WRITEFREELY_DOCKER=True
+ENV WRITEFREELY_DOCKER_PARENT_DIR=/usr/share/writefreely
 ENV HOME=/data
+
 WORKDIR /data
+VOLUME /data
+EXPOSE 8080
+
+# Runs as uid 1000. A bind-mounted ./data on the host must be owned by
+# 1000:1000, or the container cannot write its config, keys or database.
+USER writefreely
+
 CMD ["/usr/bin/writefreely"]
+
+# Accept any HTTP response as proof the server is up. Requiring a 2xx on
+# "/" reports a healthy instance as unhealthy whenever the landing page
+# isn't publicly readable.
+HEALTHCHECK --start-period=5s --interval=15s --timeout=5s \
+    CMD wget -q --spider --server-response http://localhost:8080/ 2>&1 | grep -q "HTTP/" || exit 1

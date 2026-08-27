@@ -1,25 +1,58 @@
+# Production stack, building the image from this checkout.
+#
+# Before the first run:
+#   cp .env.example .env       and edit the passwords
+#   mkdir -p data && sudo chown -R 1000:1000 data
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml exec app writefreely --config
+#
+# See docs/docker.md for the full walkthrough.
+
 services:
   app:
-    image: writefreely
+    # Built locally rather than pulled: this stack uses Dockerfile.prod,
+    # which is not the image published to a registry.
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    image: writefreely:local
     container_name: writefreely
+
     volumes:
       - ./data:/data
+
     ports:
       - 127.0.0.1:8080:8080
+
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+
     restart: unless-stopped
 
   db:
-    image: lscr.io/linuxserver/mariadb
+    image: mariadb:11.4
     container_name: writefreely-mariadb
-    volumes: 
-      - ./db:/config
+
+    volumes:
+      - ./db:/var/lib/mysql
+
     environment:
-      - PUID=65534
-      - PGID=65534
-      - TZ=Etc/UTC
-      - MYSQL_DATABASE=writefreely
-      - MYSQL_USER=writefreely
-      - MYSQL_PASSWORD=P@ssw0rd
+      - TZ=${TZ:-Etc/UTC}
+      - MARIADB_DATABASE=writefreely
+      - MARIADB_USER=writefreely
+      - MARIADB_PASSWORD=${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      - MARIADB_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+
+    command:
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
     restart: unless-stopped
