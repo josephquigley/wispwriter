@@ -375,9 +375,10 @@ func TestImageUploadAcceptsSVGAndServesItSafely(t *testing.T) {
 		req.AddCookie(c)
 	}
 	req.Header.Set("X-CSRF-Token", m[1])
-	// gorilla/csrf assumes TLS on this branch, so this is the Origin a
-	// browser would send over HTTPS.
-	req.Header.Set("Origin", "https://example.com")
+	// The test instance's configured host is http://, and this build marks
+	// such requests as plaintext, so this is the Origin a browser actually
+	// sends here.
+	req.Header.Set("Origin", "http://example.com")
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
