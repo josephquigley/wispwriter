@@ -106,7 +106,7 @@ input.copy-text {
 	<h2>Blogs</h2>
 
 	{{range .Colls}}
-	<h3><a href="/{{.Alias}}/">{{.Title}}</a></h3>
+	<h3><a href="/{{if not $.SingleUser}}{{.Alias}}/{{end}}">{{.Title}}</a></h3>
 	<table class="classy export">
 		<tr>
 			<th>Alias</th>
