@@ -31,6 +31,13 @@ func (app *App) InitStaticRoutes(r *mux.Router) {
 	fs = cacheControl(fs)
 	app.shttp = http.NewServeMux()
 	app.shttp.Handle("/", fs)
+
+	// Uploaded images are served by the same file server, but with headers
+	// that stop a browser from ever treating one as anything but an image.
+	if app.cfg.Uploads.Enabled {
+		r.PathPrefix("/" + uploadsDir + "/").Handler(uploadHeaders(fs))
+	}
+
 	r.PathPrefix("/").Handler(fs)
 }
 
@@ -122,6 +129,8 @@ func InitRoutes(apper Apper, r *mux.Router) *mux.Router {
 	apiMe.Path("/self").Handler(csrfProtectForm(apper.App().keys.CSRFKey, handler.All(updateSettings))).Methods("POST")
 	apiMe.Path("/invites").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(handleCreateUserInvite))).Methods("POST")
 	apiMe.Path("/import").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(handleImport))).Methods("POST")
+	apiMe.Path("/images").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(handleUploadImage))).Methods("POST")
+	apiMe.Path("/images/{image}").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(handleDeleteImage))).Methods("DELETE")
 	apiMe.Path("/oauth/remove").Handler(csrf.Protect(apper.App().keys.CSRFKey, csrf.Path("/"))(handler.User(removeOauth))).Methods("POST")
 
 	// Sign up validation
