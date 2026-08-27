@@ -308,3 +308,24 @@ func TestUncheckedToggleStoresFalse(t *testing.T) {
 	assert.False(t, loaded.ShowSubscribeIndex, "an unchecked box must store false, not be ignored")
 	assert.True(t, loaded.ShowSubscribePosts, "a checked box must win over its hidden default")
 }
+
+// TestSettingsHidesSubscribeTogglesWhenBlogHasSubsOff covers the gate on
+// the settings block. With email subscriptions off for this blog neither
+// placement renders whatever the toggles say, so offering them is
+// offering a setting that does nothing.
+func TestSettingsHidesSubscribeTogglesWhenBlogHasSubsOff(t *testing.T) {
+	app, router := newSubscribeTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "subsoffsettings")
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+
+	// email_subs is off by default for a new blog.
+	rec, _ := renderedRequest(t, router, "GET", "/me/c/"+coll.Alias, cookies)
+	assert.NotContains(t, rec.Body.String(), `name="show_subscribe_index"`,
+		"the placement toggles do nothing while the blog has subscriptions off")
+
+	enableEmailSubs(t, app, u, coll)
+
+	rec, _ = renderedRequest(t, router, "GET", "/me/c/"+coll.Alias, cookies)
+	assert.Contains(t, rec.Body.String(), `name="show_subscribe_index"`)
+	assert.Contains(t, rec.Body.String(), `name="show_subscribe_posts"`)
+}

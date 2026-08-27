@@ -128,11 +128,14 @@ textarea.section.norm {
 		</div>
 	</div>
 
-	{{if .EmailCfg.Enabled}}
+	{{/* Only meaningful once this blog has email subscriptions switched on
+	     in the Updates section above: with them off, neither placement
+	     renders whatever these are set to. */}}
+	{{if and .EmailCfg.Enabled .EmailSubsEnabled}}
 	<div class="option">
 		<h2>Subscribe form</h2>
 		<div class="section">
-			<p class="explain">Choose where readers are offered the email subscribe form. Both are shown by default.</p>
+			<p class="explain">Choose where readers are offered the email subscribe form.</p>
 			<ul style="list-style:none">
 				<!-- An unchecked checkbox submits nothing at all, which is
 				     indistinguishable from "field omitted" and would make these
