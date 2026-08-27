@@ -18,6 +18,11 @@ ENV NODE_OPTIONS=--openssl-legacy-provider
 
 # Resolve modules before copying the source, so editing a .go file doesn't
 # invalidate the dependency layer and re-download the module graph.
+# git describe cannot work in every build context -- notably a git
+# worktree, whose .git is a file pointing outside the context. Pass the
+# version in explicitly so the binary never reports a bare "v".
+ARG WRITEFREELY_VERSION=
+
 COPY go.mod go.sum ./
 RUN go mod download
 
@@ -25,7 +30,7 @@ COPY . .
 
 # Stage only what the runtime image needs: the binary, the asset trees and
 # the keys directory. The source tree is deliberately left behind.
-RUN make build \
+RUN make build VERSION="$WRITEFREELY_VERSION" \
     && make ui \
     && mkdir -p /stage/cmd/writefreely \
     && cp cmd/writefreely/writefreely /stage/cmd/writefreely/writefreely \
