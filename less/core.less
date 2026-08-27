@@ -633,6 +633,13 @@ ol.pinned-list {
 		white-space: nowrap;
 	}
 
+	// While a reorder is in flight, stop a second click landing before the
+	// server has answered the first.
+	&.is-busy .pinned-controls {
+		pointer-events: none;
+		opacity: 0.6;
+	}
+
 	.pinned-controls {
 		flex: 0 0 auto;
 		display: flex;

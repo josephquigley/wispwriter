@@ -15,9 +15,9 @@
 	<p>These posts make up the navigation at the top of <a href="/{{.Alias}}/">{{.Collection.DisplayTitle}}</a>, in this order.</p>
 
 	{{if .PinnedPosts}}
-	<ol class="pinned-list">
+	<ol class="pinned-list" id="pinned-list" data-action-base="/me/c/{{$.Alias}}/pinned">
 		{{range $i, $p := .PinnedPosts}}
-		<li class="pinned-item">
+		<li class="pinned-item" data-post-id="{{$p.ID}}">
 			<span class="pinned-title"><a href="/{{$.Alias}}/{{$p.Slug.String}}">{{$p.PlainDisplayTitle}}</a></span>
 			<span class="pinned-controls">
 				{{if gt $i 0}}
@@ -36,5 +36,6 @@
 	{{end}}
 </div>
 
+<script src="/js/pinned-reorder.js"></script>
 {{template "footer" .}}
 {{end}}

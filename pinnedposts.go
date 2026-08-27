@@ -50,6 +50,12 @@ func ownedPinnedCollection(app *App, u *User, r *http.Request) (*Collection, err
 	return c, nil
 }
 
+// isXHR reports whether the request came from the page's own script
+// rather than from a plain form submission.
+func isXHR(r *http.Request) bool {
+	return r.Header.Get("X-Requested-With") == "XMLHttpRequest"
+}
+
 // viewPinnedPosts renders the pinned posts of one of the user's blogs, in
 // navigation order, with controls to reorder and unpin them.
 func viewPinnedPosts(app *App, u *User, w http.ResponseWriter, r *http.Request) error {
@@ -133,6 +139,16 @@ func handlePinnedPostAction(app *App, u *User, w http.ResponseWriter, r *http.Re
 
 	if err := app.db.NormalizePinnedPositions(c.ID); err != nil {
 		return err
+	}
+
+	// The page enhances these forms with fetch when scripting is
+	// available. Answering those with a redirect would have the browser
+	// re-render the whole page just to discard it, so acknowledge and let
+	// the script update the list in place. Without scripting the form
+	// submits normally and the redirect is what reloads the page.
+	if isXHR(r) {
+		w.WriteHeader(http.StatusNoContent)
+		return nil
 	}
 
 	return impart.HTTPError{http.StatusFound, "/me/c/" + c.Alias + "/pinned"}

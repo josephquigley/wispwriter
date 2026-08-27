@@ -385,3 +385,43 @@ func TestPinnedActionRejectsGET(t *testing.T) {
 	assert.Equal(t, ids, gotIDs, "a GET may not reorder anything")
 	assert.Equal(t, []int64{1, 2}, gotPos)
 }
+
+// TestPinnedActionAnswersXHRWithoutRedirect covers the response the page's
+// own script relies on. A redirect would make the browser fetch and
+// discard the whole page for every reorder, so an XHR gets an
+// acknowledgement and updates the list itself. A plain form submission
+// must still be redirected, since that is what reloads the page when
+// scripting is unavailable.
+func TestPinnedActionAnswersXHRWithoutRedirect(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "xhrpin")
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2})
+
+	cookies, token := pinnedPageSession(t, app, router, u, coll.Alias)
+
+	path := "/me/c/" + coll.Alias + "/pinned/" + ids[0] + "/down"
+	req := httptest.NewRequest("POST", path,
+		strings.NewReader(url.Values{"gorilla.csrf.Token": {token}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Referer", "https://"+req.Host+path)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNoContent, rec.Code, "body: %s", rec.Body.String())
+	assert.Empty(t, rec.Header().Get("Location"), "an XHR must not be redirected")
+
+	// The reorder still happened.
+	gotIDs, gotPos := pinnedPositions(t, app, coll.ID)
+	assert.Equal(t, []string{ids[1], ids[0]}, gotIDs)
+	assert.Equal(t, []int64{1, 2}, gotPos)
+
+	// Without the header the plain form path still redirects.
+	plain := postPinnedAction(t, app, router, u, coll.Alias, ids[0], "up")
+	assert.Equal(t, http.StatusFound, plain.Code)
+	assert.NotEmpty(t, plain.Header().Get("Location"))
+}
