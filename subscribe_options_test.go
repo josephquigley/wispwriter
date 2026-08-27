@@ -12,7 +12,6 @@ package writefreely
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -284,22 +283,6 @@ func TestSettingsShowsSubscribeToggles(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `name="show_subscribe_posts"`)
 }
 
-// postForm submits a form-encoded POST through the router, the way the blog
-// customization page does.
-func postForm(t *testing.T, router *mux.Router, path string, values url.Values, cookies []*http.Cookie) *httptest.ResponseRecorder {
-	t.Helper()
-
-	req := httptest.NewRequest("POST", path, strings.NewReader(values.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, c := range cookies {
-		req.AddCookie(c)
-	}
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	return rec
-}
-
 func TestUncheckedToggleStoresFalse(t *testing.T) {
 	app, router := newSubscribeTestApp(t, nil)
 	u, coll, _ := createTemplateTestUser(t, app, "uncheckedtoggle")
@@ -311,13 +294,13 @@ func TestUncheckedToggleStoresFalse(t *testing.T) {
 	// This is exactly what the customization form submits: the hidden input
 	// always, and the checkbox's own value only when it's checked. The index
 	// box is unchecked here, the posts box is checked.
-	rec := postForm(t, router, "/api/collections/"+coll.Alias, url.Values{
+	rec := postForm(t, router, "/api/collections/"+coll.Alias, cookies, url.Values{
 		"web":                  {"1"},
 		"title":                {coll.Title},
 		"email_subs":           {"on"},
 		"show_subscribe_index": {"false"},
 		"show_subscribe_posts": {"false", "true"},
-	}, cookies)
+	})
 	assert.Less(t, rec.Code, 400, "form submission succeeded")
 
 	loaded, err := app.db.GetCollection(coll.Alias)
