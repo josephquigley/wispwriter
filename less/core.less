@@ -1445,14 +1445,37 @@ li#create-collection {
 			flex: 1;
 			min-width: 0;
 		}
-		button.remove-verification {
-			flex: none;
-			margin-left: 0.5em;
-			line-height: 1;
+	}
+
+	// Neither of these is a submit, so they take the shared input rule's
+	// half-em padding without the primary fill that would justify it, and
+	// render as bare browser buttons next to the panel's styled controls.
+	// Draw them as links: both are secondary to Save changes, which is the
+	// only thing on this page that should look like a button.
+	.remove-verification, #add-verification {
+		background: none;
+		border: none;
+		color: @primary;
+		cursor: pointer;
+		font-size: 0.86em;
+		text-decoration: none;
+
+		&:hover, &:focus {
+			background: none;
+			text-decoration: underline;
 		}
 	}
+
+	.remove-verification {
+		flex: none;
+		margin-left: 0.5em;
+		padding: 0 0.25em;
+		font-size: 1.1em;
+		line-height: 1;
+	}
+
 	#add-verification {
-		font-size: 0.86em;
+		padding: 0;
 	}
 }
 

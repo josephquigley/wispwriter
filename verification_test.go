@@ -290,3 +290,20 @@ func TestCollectionJSONSingleLinkKeyEmptyWhenUnset(t *testing.T) {
 	assert.NoError(t, json.Unmarshal(b, &out))
 	assert.Equal(t, "", out["verification_link"], "the key is still present, as it was before")
 }
+
+// TestVerificationRowControlsAreLabelled covers the remove control's
+// accessible name. Its visible text is a multiplication sign, which a
+// screen reader announces as "times" rather than as what the control does.
+func TestVerificationRowControlsAreLabelled(t *testing.T) {
+	app, router := newTemplateTestApp(t, multiUser)
+	u, coll, _ := createTemplateTestUser(t, app, "rowlabels")
+
+	assert.NoError(t, saveVerificationLinks(app, coll, "https://a.example"))
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	rec, _ := renderedRequest(t, router, "GET", "/me/c/"+coll.Alias, cookies)
+	body := rec.Body.String()
+
+	assert.Contains(t, body, `aria-label="Remove this link"`)
+	assert.Contains(t, body, `id="add-verification"`)
+}
