@@ -24,6 +24,8 @@ type StaticPage struct {
 	// SoftwareName is the product name as shown to people, including any
 	// fork edition.
 	SoftwareName string
+	// SoftwareURL is where this build's source can be obtained.
+	SoftwareURL string
 	// UpstreamVersion is the WriteFreely release this build is based on,
 	// used for links into WriteFreely's versioned documentation.
 	UpstreamVersion string
