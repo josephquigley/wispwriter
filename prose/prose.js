@@ -85,9 +85,12 @@ class ProseMirrorView {
       },
       handleDOMEvents: {
         drop: (view, event) => {
-          // If a file is dropped externally into the editor, do not insert anything. This will not trigger if an image has been inserted after upload and is dragged and dropped internally to change its position.
+          // A file dropped in from outside is either uploaded, when the
+          // instance has uploads enabled, or ignored. This does not trigger
+          // when an already-inserted image is dragged to a new position.
           if (event.dataTransfer.files.length > 0) {
             event.preventDefault();
+            uploadDroppedImages(view, event);
           }
         }
       },
@@ -116,6 +119,72 @@ class ProseMirrorView {
   }
 }
 
+// uploadsConfig is set by the editor template when the instance has image
+// uploads turned on.
+function uploadsConfig() {
+  return window.wfImageUploads || null;
+}
+
+// uploadDroppedImages uploads each dropped file and inserts an image node at
+// the drop point once it lands. ProseMirror owns its document, so the image
+// arrives as a node in a transaction rather than as text.
+function uploadDroppedImages(view, event) {
+  const cfg = uploadsConfig();
+  if (!cfg || !cfg.enabled || typeof WFImageUpload === "undefined") {
+    return;
+  }
+
+  const coords = view.posAtCoords({
+    left: event.clientX,
+    top: event.clientY,
+  });
+  const pos = coords ? coords.pos : view.state.selection.from;
+  const strip = document.getElementById("image-strip");
+
+  for (let i = 0; i < event.dataTransfer.files.length; i++) {
+    WFImageUpload.upload(event.dataTransfer.files[i], {
+      onSuccess: (image) => {
+        const node = writeFreelySchema.nodes.image.create({
+          src: image.url,
+          alt: image.name,
+        });
+        view.dispatch(view.state.tr.insert(pos, node));
+        WFImageUpload.addThumbnail(strip, image);
+      },
+      onError: (msg) => window.alert(msg),
+    });
+  }
+}
+
+// removeImageNodes deletes every image node pointing at the given URL, so
+// deleting a thumbnail also takes the image out of the post.
+function removeImageNodes(view, url) {
+  const positions = [];
+  view.state.doc.descendants((node, pos) => {
+    if (node.type === writeFreelySchema.nodes.image && node.attrs.src === url) {
+      positions.push(pos);
+    }
+  });
+  if (positions.length === 0) {
+    return;
+  }
+  let tr = view.state.tr;
+  // Delete from the end so earlier positions stay valid.
+  positions.reverse().forEach((pos) => {
+    tr = tr.delete(tr.mapping.map(pos), tr.mapping.map(pos + 1));
+  });
+  view.dispatch(tr);
+}
+
 let place = document.querySelector("#editor");
 let view = new ProseMirrorView(place, $content.value);
 window.editorView = view;
+
+const uploads = uploadsConfig();
+if (uploads && uploads.enabled && typeof WFImageUpload !== "undefined") {
+  WFImageUpload.setCSRFToken(uploads.csrfToken);
+  WFImageUpload.initStrip(document.getElementById("image-strip"), {
+    onRemoved: (url) => removeImageNodes(view.view, url),
+    onError: (msg) => window.alert(msg),
+  });
+}

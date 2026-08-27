@@ -519,3 +519,17 @@ func TestImageUploadThroughRouterWithCSRF(t *testing.T) {
 	assert.Equal(t, 1, countUploadedFiles(t, app))
 	_ = u
 }
+
+func TestProseEditorIncludesUploader(t *testing.T) {
+	staticDir := t.TempDir()
+	app, router := newTemplateTestApp(t, func(cfg *config.Config) {
+		cfg.Server.StaticParentDir = staticDir
+		cfg.App.Editor = "classic"
+		cfg.Uploads.Enabled = true
+	})
+	u, _, _ := createTemplateTestUser(t, app, "proser")
+	rec := assertRendersCleanly(t, router, "GET", "/me/new", []*http.Cookie{loginCookie(t, app, u)}, http.StatusOK)
+	assert.Contains(t, rec.Body.String(), "/js/image-upload.js")
+	assert.Contains(t, rec.Body.String(), "window.wfImageUploads")
+	assert.Contains(t, rec.Body.String(), `id="image-strip"`)
+}

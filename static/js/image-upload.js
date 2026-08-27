@@ -141,8 +141,10 @@ var WFImageUpload = (function () {
 		textarea.selectionStart = textarea.selectionEnd = start + text.length;
 	}
 
-	// initStrip wires the thumbnail strip's delete controls.
-	function initStrip(strip, textarea, onError) {
+	// initStrip wires the thumbnail strip's delete controls. onRemoved is
+	// called with the deleted image's URL so each editor can take the link
+	// out of its own document.
+	function initStrip(strip, handlers) {
 		if (!strip) {
 			return;
 		}
@@ -159,15 +161,24 @@ var WFImageUpload = (function () {
 
 			remove(imageID, {
 				onSuccess: function () {
-					if (textarea && url) {
-						var pattern = new RegExp('!?\\[[^\\]]*\\]\\(' + escapeRegExp(url) + '\\)', 'g');
-						replaceInTextarea(textarea, pattern, '');
+					if (handlers.onRemoved) {
+						handlers.onRemoved(url);
 					}
 					thumb.parentNode.removeChild(thumb);
 				},
-				onError: onError
+				onError: handlers.onError
 			});
 		});
+	}
+
+	// stripLinks removes every markdown link pointing at the given URL from
+	// a textarea's contents.
+	function stripLinks(textarea, url) {
+		if (!textarea || !url) {
+			return;
+		}
+		var pattern = new RegExp('!?\\[[^\\]]*\\]\\(' + escapeRegExp(url) + '\\)', 'g');
+		replaceInTextarea(textarea, pattern, '');
 	}
 
 	// addThumbnail appends an image to the strip.
@@ -205,7 +216,12 @@ var WFImageUpload = (function () {
 			window.alert(msg);
 		};
 
-		initStrip(strip, textarea, onError);
+		initStrip(strip, {
+			onRemoved: function (url) {
+				stripLinks(textarea, url);
+			},
+			onError: onError
+		});
 
 		if (!textarea) {
 			return;
@@ -258,6 +274,7 @@ var WFImageUpload = (function () {
 	return {
 		init: init,
 		initStrip: initStrip,
+		stripLinks: stripLinks,
 		upload: upload,
 		remove: remove,
 		addThumbnail: addThumbnail,
