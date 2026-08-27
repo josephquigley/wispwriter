@@ -11,9 +11,12 @@
 package writefreely
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/writefreely/writefreely/config"
 )
 
 func TestGetCollectionPostsForOwner(t *testing.T) {
@@ -80,4 +83,40 @@ func TestPostRowPartialIsParsed(t *testing.T) {
 		return
 	}
 	assert.NotNil(t, tmpl.Lookup("post-row"), "post-row partial should be parsed into user pages")
+}
+
+func TestViewCollectionPostsOwner(t *testing.T) {
+	for _, singleUser := range []bool{true, false} {
+		singleUser := singleUser
+		name := "MultiUser"
+		if singleUser {
+			name = "SingleUser"
+		}
+		t.Run(name, func(t *testing.T) {
+			app, router := newTemplateTestApp(t, func(cfg *config.Config) {
+				cfg.App.SingleUser = singleUser
+			})
+			u, coll, post := createTemplateTestUser(t, app, "listviewer")
+
+			cookies := []*http.Cookie{loginCookie(t, app, u)}
+			rec := assertRendersCleanly(t, router, "GET", "/me/c/"+coll.Alias+"/posts", cookies, http.StatusOK)
+
+			body := rec.Body.String()
+			assert.Contains(t, body, "post-"+post.ID)
+			assert.Contains(t, body, "Hello World")
+			assert.Contains(t, body, post.Slug.String+"/edit")
+			// The list must never render post bodies.
+			assert.NotContains(t, body, "This is a **test** post")
+		})
+	}
+}
+
+func TestViewCollectionPostsRejectsNonOwner(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	_, coll, _ := createTemplateTestUser(t, app, "listowner2")
+	other, _, _ := createTemplateTestUser(t, app, "listintruder")
+
+	cookies := []*http.Cookie{loginCookie(t, app, other)}
+	rec, _ := renderedRequest(t, router, "GET", "/me/c/"+coll.Alias+"/posts", cookies)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
