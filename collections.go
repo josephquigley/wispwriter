@@ -70,6 +70,15 @@ type (
 		Monetization string `json:"monetization_pointer,omitempty"`
 		Verification string `json:"verification_link"`
 
+		// ShowSubscribeIndex controls whether the email subscribe form is
+		// rendered at the bottom of the blog's index page. It defaults to
+		// true, which is how blogs behaved before the setting existed.
+		ShowSubscribeIndex bool `json:"show_subscribe_index"`
+		// ShowSubscribePosts controls whether the email subscribe form is
+		// rendered at the end of each individual post page. It also
+		// defaults to true.
+		ShowSubscribePosts bool `json:"show_subscribe_posts"`
+
 		db       *datastore
 		hostName string
 	}
@@ -122,6 +131,9 @@ type (
 		LetterReply  *string         `schema:"letter_reply" json:"letter_reply"`
 		Visibility   *int            `schema:"visibility" json:"public"`
 		Format       *sql.NullString `schema:"format" json:"format"`
+
+		ShowSubscribeIndex *bool `schema:"show_subscribe_index" json:"show_subscribe_index"`
+		ShowSubscribePosts *bool `schema:"show_subscribe_posts" json:"show_subscribe_posts"`
 	}
 	CollectionFormat struct {
 		Format string
@@ -377,6 +389,21 @@ func (c *Collection) FederatedAccount() string {
 
 func (c *Collection) RenderMathJax() bool {
 	return c.db.CollectionHasAttribute(c.ID, "render_mathjax")
+}
+
+// collectionAttributeBool interprets a stored collection attribute as a
+// boolean with the given default, used for attributes whose absence must
+// mean something other than false. An unrecognized value falls back to
+// def rather than silently reading as off.
+func collectionAttributeBool(v string, def bool) bool {
+	switch v {
+	case "true", "1":
+		return true
+	case "false", "0":
+		return false
+	default:
+		return def
+	}
 }
 
 func (c *Collection) EmailSubsEnabled() bool {
