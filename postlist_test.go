@@ -51,3 +51,21 @@ func TestGetCollectionPostsForOwnerPaging(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, *second, 6)
 }
+
+func TestGetAllPostsForAdmin(t *testing.T) {
+	app, _ := newTemplateTestApp(t, nil)
+	_, collA, _ := createTemplateTestUser(t, app, "adminlista")
+	_, collB, _ := createTemplateTestUser(t, app, "adminlistb")
+
+	posts, total, err := app.db.GetAllPostsForAdmin(1)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, total)
+	assert.Len(t, *posts, 2)
+
+	aliases := map[string]bool{}
+	for _, p := range *posts {
+		aliases[p.Collection.Alias] = true
+	}
+	assert.True(t, aliases[collA.Alias])
+	assert.True(t, aliases[collB.Alias])
+}
