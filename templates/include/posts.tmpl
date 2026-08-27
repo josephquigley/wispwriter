@@ -10,8 +10,8 @@
 		{{- end}}
 		{{if $.IsOwner}}
 			<a class="user hidden action" href="/{{if not $.SingleUser}}{{$.Alias}}/{{end}}{{.Slug.String}}/edit">edit</a>
-			{{if $.CanPin}}<a class="user hidden pin action" href="/{{$.Alias}}/{{.Slug.String}}/pin" onclick="pinPost(event, '{{.ID}}', '{{.Slug.String}}', '{{.PlainDisplayTitle}}')">pin</a>{{end}}
-			<a class="user hidden delete action" onclick="delPost(event, '{{.ID}}')" href="/{{$.Alias}}/{{.Slug.String}}/delete">delete</a>
+			{{if $.CanPin}}<a class="user hidden pin action" href="/{{if not $.SingleUser}}{{$.Alias}}/{{end}}{{.Slug.String}}/pin" onclick="pinPost(event, '{{.ID}}', '{{.Slug.String}}', '{{.PlainDisplayTitle}}')">pin</a>{{end}}
+			<a class="user hidden delete action" onclick="delPost(event, '{{.ID}}')" href="/{{if not $.SingleUser}}{{$.Alias}}/{{end}}{{.Slug.String}}/delete">delete</a>
 			{{if gt (len $.Collections) 1}}<div class="user hidden action flat-select">
 				<select id="move-{{.ID}}" onchange="postActions.multiMove(this, '{{.ID}}', {{if $.SingleUser}}true{{else}}false{{end}})" title="Move this post to another blog">
 					<option style="display:none"></option>
@@ -38,7 +38,7 @@
 		{{if not $.Format.ShowDates}}<a class="user hidden action" href="{{if not $.SingleUser}}/{{$.Alias}}/{{.Slug.String}}{{else}}{{$.CanonicalURL}}{{.Slug.String}}{{end}}">view</a>{{end}}
 		<a class="user hidden action" href="/{{if not $.SingleUser}}{{$.Alias}}/{{end}}{{.Slug.String}}/edit">edit</a>
 		{{if $.CanPin}}<a class="user hidden pin action" href="/{{if not $.SingleUser}}{{$.Alias}}/{{end}}{{.Slug.String}}/pin" onclick="pinPost(event, '{{.ID}}', '{{.Slug.String}}', '{{.PlainDisplayTitle}}')">pin</a>{{end}}
-		<a class="user hidden delete action" onclick="delPost(event, '{{.ID}}')" href="/{{$.Alias}}/{{.Slug.String}}/delete">delete</a>
+		<a class="user hidden delete action" onclick="delPost(event, '{{.ID}}')" href="/{{if not $.SingleUser}}{{$.Alias}}/{{end}}{{.Slug.String}}/delete">delete</a>
 		{{if gt (len $.Collections) 1}}<div class="user hidden action flat-select">
 			<select id="move-{{.ID}}" onchange="postActions.multiMove(this, '{{.ID}}', {{if $.SingleUser}}true{{else}}false{{end}})" title="Move this post to another blog">
 				<option style="display:none"></option>
@@ -56,9 +56,9 @@
 </h2>
 {{end}}
 
-{{if .Excerpt}}<div {{if .Language}}lang="{{.Language.String}}"{{end}} dir="{{.Direction}}" class="book p-summary">{{if and (and (not $.IsOwner) (not $.Format.ShowDates)) (not .Title.String)}}<a class="hidden action" href="{{if $.IsOwner}}/{{$.Alias}}/{{.Slug.String}}{{else}}{{$.CanonicalURL}}{{.Slug.String}}{{end}}">view</a>{{end}}{{.Excerpt}}</div>
+{{if .Excerpt}}<div {{if .Language}}lang="{{.Language.String}}"{{end}} dir="{{.Direction}}" class="book p-summary">{{if and (and (not $.IsOwner) (not $.Format.ShowDates)) (not .Title.String)}}<a class="hidden action" href="{{$.CanonicalURL}}{{.Slug.String}}">view</a>{{end}}{{.Excerpt}}</div>
 
-<a class="read-more" href="{{$.CanonicalURL}}{{.Slug.String}}">{{localstr "Read more..." .Language.String}}</a>{{else}}<div {{if .Language}}lang="{{.Language.String}}"{{end}} dir="{{.Direction}}" class="book e-content">{{if and (and (not $.IsOwner) (not $.Format.ShowDates)) (not .Title.String)}}<a class="hidden action" href="{{if $.IsOwner}}/{{$.Alias}}/{{.Slug.String}}{{else}}{{$.CanonicalURL}}{{.Slug.String}}{{end}}">view</a>{{end}}{{.HTMLContent}}</div>{{end}}</article>{{ end }}
+<a class="read-more" href="{{$.CanonicalURL}}{{.Slug.String}}">{{localstr "Read more..." .Language.String}}</a>{{else}}<div {{if .Language}}lang="{{.Language.String}}"{{end}} dir="{{.Direction}}" class="book e-content">{{if and (and (not $.IsOwner) (not $.Format.ShowDates)) (not .Title.String)}}<a class="hidden action" href="{{$.CanonicalURL}}{{.Slug.String}}">view</a>{{end}}{{.HTMLContent}}</div>{{end}}</article>{{ end }}
 {{ end }}
 
 {{define "paid-badge"}}<img class="paid" alt="Paid article" src="/img/paidarticle.svg" /> {{end}}
