@@ -6,13 +6,13 @@
  * background and rearrange the list in place, so reordering does not throw
  * the page away and rebuild it.
  *
- * Anything unexpected -- a failed request, a browser without the APIs this
+ * Anything unexpected -- a failed request, a browser without what this
  * needs -- falls back to submitting the form normally, so the feature
  * degrades to the behaviour it enhances rather than breaking.
  */
-(function () {
+(function() {
 	var list = document.getElementById('pinned-list');
-	if (!list || !window.fetch || !window.FormData) {
+	if (!list || !window.XMLHttpRequest) {
 		return;
 	}
 
@@ -20,12 +20,40 @@
 	var busy = false;
 
 	function rows() {
-		return Array.prototype.slice.call(list.querySelectorAll('li.pinned-item'));
+		return list.querySelectorAll('li.pinned-item');
 	}
 
 	function csrfToken() {
 		var f = list.querySelector('input[name="gorilla.csrf.Token"]');
 		return f ? f.value : '';
+	}
+
+	// The row a control belongs to. Walking up by hand rather than with
+	// closest(), which nothing else in the codebase relies on.
+	function itemFor(el) {
+		while (el != null && el !== list) {
+			if (el.tagName === 'LI') {
+				return el;
+			}
+			el = el.parentNode;
+		}
+		return null;
+	}
+
+	function setBusy(on) {
+		busy = on;
+		list.className = on ? 'pinned-list is-busy' : 'pinned-list';
+	}
+
+	function encodeForm(form) {
+		var parts = [];
+		for (var i = 0; i < form.elements.length; i++) {
+			var el = form.elements[i];
+			if (el.name) {
+				parts.push(encodeURIComponent(el.name) + '=' + encodeURIComponent(el.value));
+			}
+		}
+		return parts.join('&');
 	}
 
 	// Build one of the move controls. The server omits the control a row
@@ -56,7 +84,8 @@
 	// their controls differ from every other row's.
 	function syncControls() {
 		var items = rows();
-		items.forEach(function (li, i) {
+		for (var i = 0; i < items.length; i++) {
+			var li = items[i];
 			var controls = li.querySelector('.pinned-controls');
 			var postID = li.getAttribute('data-post-id');
 			var up = controls.querySelector('form[action$="/up"]');
@@ -74,7 +103,7 @@
 			} else if (i < items.length - 1 && !down) {
 				controls.insertBefore(moveForm(postID, 'down'), unpin);
 			}
-		});
+		}
 	}
 
 	// Move rows with a FLIP transition: record where they are, rearrange,
@@ -86,27 +115,30 @@
 
 		rearrange();
 
-		var deltaA = beforeA - a.getBoundingClientRect().top;
-		var deltaB = beforeB - b.getBoundingClientRect().top;
-
-		[[a, deltaA], [b, deltaB]].forEach(function (pair) {
-			var el = pair[0], delta = pair[1];
-			el.style.transition = 'none';
-			el.style.transform = 'translateY(' + delta + 'px)';
-		});
+		slide(a, beforeA - a.getBoundingClientRect().top);
+		slide(b, beforeB - b.getBoundingClientRect().top);
 
 		// Force a reflow so the browser treats the next change as an
 		// animation rather than collapsing both into one paint.
 		void list.offsetHeight;
 
-		[a, b].forEach(function (el) {
-			el.style.transition = 'transform 180ms ease';
-			el.style.transform = '';
-			el.addEventListener('transitionend', function done() {
-				el.style.transition = '';
-				el.removeEventListener('transitionend', done);
-			});
-		});
+		release(a);
+		release(b);
+	}
+
+	function slide(el, delta) {
+		el.style.transition = 'none';
+		el.style.transform = 'translateY(' + delta + 'px)';
+	}
+
+	function release(el) {
+		el.style.transition = 'transform 180ms ease';
+		el.style.transform = '';
+		var done = function() {
+			el.style.transition = '';
+			el.removeEventListener('transitionend', done);
+		};
+		el.addEventListener('transitionend', done);
 	}
 
 	function collapse(li, after) {
@@ -116,65 +148,65 @@
 		window.setTimeout(after, 120);
 	}
 
-	list.addEventListener('submit', function (e) {
+	list.addEventListener('submit', function(e) {
 		var form = e.target;
 		if (form.tagName !== 'FORM' || busy) {
 			return;
 		}
-		var li = form.closest('li.pinned-item');
+		var li = itemFor(form);
 		if (!li) {
 			return;
 		}
 
 		e.preventDefault();
-		busy = true;
-		list.classList.add('is-busy');
+		setBusy(true);
 
-		fetch(form.action, {
-			method: 'POST',
-			body: new FormData(form),
-			credentials: 'same-origin',
-			headers: { 'X-Requested-With': 'XMLHttpRequest' }
-		}).then(function (res) {
-			if (!res.ok) {
-				throw new Error('request failed: ' + res.status);
-			}
+		var http = new XMLHttpRequest();
+		http.open('POST', form.action, true);
+		http.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+		// Tells the handler to acknowledge rather than redirect, so the
+		// browser does not fetch and discard the page on every reorder.
+		http.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
 
-			if (/\/remove$/.test(form.action)) {
-				collapse(li, function () {
-					li.parentNode.removeChild(li);
-					syncControls();
-					finish();
-				});
+		http.onreadystatechange = function() {
+			if (http.readyState != 4) {
 				return;
 			}
-
-			var up = /\/up$/.test(form.action);
-			var other = up ? li.previousElementSibling : li.nextElementSibling;
-			if (!other) {
-				finish();
+			if (http.status < 200 || http.status > 299) {
+				// Let the browser do it the plain way rather than leaving
+				// the page showing an order the server does not have.
+				setBusy(false);
+				form.submit();
 				return;
 			}
-
-			animateSwap(li, other, function () {
-				if (up) {
-					list.insertBefore(li, other);
-				} else {
-					list.insertBefore(other, li);
-				}
-			});
-			syncControls();
-			finish();
-		}).catch(function () {
-			// Let the browser do it the plain way rather than leaving the
-			// page showing an order the server does not have.
-			list.classList.remove('is-busy');
-			form.submit();
-		});
-
-		function finish() {
-			busy = false;
-			list.classList.remove('is-busy');
-		}
+			apply(form, li);
+			setBusy(false);
+		};
+		http.send(encodeForm(form));
 	});
+
+	function apply(form, li) {
+		if (/\/remove$/.test(form.action)) {
+			collapse(li, function() {
+				li.parentNode.removeChild(li);
+				syncControls();
+			});
+			return;
+		}
+
+		var up = /\/up$/.test(form.action);
+		var other = up ? li.previousElementSibling : li.nextElementSibling;
+		if (!other) {
+			return;
+		}
+
+		animateSwap(li, other, function() {
+			if (up) {
+				list.insertBefore(li, other);
+			} else {
+				list.insertBefore(other, li);
+			}
+		});
+		syncControls();
+	}
 })();
