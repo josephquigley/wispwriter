@@ -68,7 +68,10 @@ type (
 		URL         string         `json:"url,omitempty"`
 
 		Monetization string `json:"monetization_pointer,omitempty"`
-		Verification string `json:"verification_link"`
+		// Verifications holds the blog's rel="me" verification links, in
+		// order. The first entry is the canonical identity and is what
+		// fediverse:creator is derived from.
+		Verifications []string `json:"verification_links"`
 
 		// ShowSubscribeIndex controls whether the email subscribe form is
 		// rendered at the bottom of the blog's index page. It defaults to
@@ -415,6 +418,15 @@ func (c *Collection) MonetizationURL() string {
 		return ""
 	}
 	return strings.Replace(c.Monetization, "$", "https://", 1)
+}
+
+// Verification returns the blog's canonical verification link -- the first
+// of its rel="me" links -- or an empty string if it has none.
+func (c *Collection) Verification() string {
+	if len(c.Verifications) == 0 {
+		return ""
+	}
+	return c.Verifications[0]
 }
 
 // DisplayDescription returns the description with rendered Markdown and HTML.
@@ -1338,6 +1350,13 @@ func existingCollection(app *App, w http.ResponseWriter, r *http.Request) error 
 		if err != nil {
 			log.Error("Couldn't parse collection update form request: %v\n", err)
 			return ErrBadFormData
+		}
+
+		// The settings form submits one verification_link_row field per
+		// link. Join them into the single newline-separated
+		// verification_link value the decoder expects.
+		if rows, ok := r.PostForm["verification_link_row"]; ok {
+			r.PostForm.Set("verification_link", serializeVerificationLinks(rows))
 		}
 
 		err = app.formDecoder.Decode(&c, r.PostForm)

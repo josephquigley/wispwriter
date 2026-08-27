@@ -883,7 +883,7 @@ func (db *datastore) GetCollectionBy(condition string, value interface{}) (*Coll
 	c.Format = format.String
 	c.Public = c.IsPublic()
 	c.Monetization = db.GetCollectionAttribute(c.ID, "monetization_pointer")
-	c.Verification = db.GetCollectionAttribute(c.ID, "verification_link")
+	c.Verifications = parseVerificationLinks(db.GetCollectionAttribute(c.ID, "verification_link"))
 	c.ShowSubscribeIndex = collectionAttributeBool(db.GetCollectionAttribute(c.ID, "show_subscribe_index"), true)
 	c.ShowSubscribePosts = collectionAttributeBool(db.GetCollectionAttribute(c.ID, "show_subscribe_posts"), true)
 
@@ -956,7 +956,7 @@ func (db *datastore) UpdateCollection(app *App, c *SubmittedCollection, alias st
 	// WHERE values
 	q.Where("alias = ? AND owner_id = ?", alias, c.OwnerID)
 
-	if q.Updates == "" && c.Monetization == nil && c.ShowSubscribeIndex == nil && c.ShowSubscribePosts == nil {
+	if q.Updates == "" && c.Monetization == nil && c.Verification == nil && c.ShowSubscribeIndex == nil && c.ShowSubscribePosts == nil {
 		return ErrPostNoUpdatableVals
 	}
 
@@ -989,20 +989,23 @@ func (db *datastore) UpdateCollection(app *App, c *SubmittedCollection, alias st
 		}
 	}
 
-	// Update Verification link value
+	// Update Verification link values
 	if c.Verification != nil {
-		skipUpdate := false
-		if *c.Verification != "" {
+		submitted := parseVerificationLinks(*c.Verification)
+		normalized := make([]string, 0, len(submitted))
+		for _, link := range submitted {
 			// Strip away any excess spaces
-			trimmed := strings.TrimSpace(*c.Verification)
+			trimmed := strings.TrimSpace(link)
 			if strings.HasPrefix(trimmed, "@") && strings.Count(trimmed, "@") == 2 {
 				// This looks like a fediverse handle, so resolve profile URL
 				profileURL, err := GetProfileURLFromHandle(app, trimmed)
 				if err != nil || profileURL == "" {
+					// Keep the raw value, so one unresolvable handle
+					// doesn't discard the rest of the list
 					log.Error("Couldn't find user %s: %v", trimmed, err)
-					skipUpdate = true
+					normalized = append(normalized, trimmed)
 				} else {
-					c.Verification = &profileURL
+					normalized = append(normalized, profileURL)
 				}
 			} else {
 				if !strings.HasPrefix(trimmed, "http") {
@@ -1010,20 +1013,17 @@ func (db *datastore) UpdateCollection(app *App, c *SubmittedCollection, alias st
 				}
 				vu, err := url.Parse(trimmed)
 				if err != nil {
-					// Value appears invalid, so don't update
-					skipUpdate = true
+					// Value appears invalid, so keep it as submitted
+					normalized = append(normalized, trimmed)
 				} else {
-					s := vu.String()
-					c.Verification = &s
+					normalized = append(normalized, vu.String())
 				}
 			}
 		}
-		if !skipUpdate {
-			err = db.SetCollectionAttribute(collID, "verification_link", *c.Verification)
-			if err != nil {
-				log.Error("Unable to insert verification_link value: %v", err)
-				return err
-			}
+		err = db.SetCollectionAttribute(collID, "verification_link", serializeVerificationLinks(normalized))
+		if err != nil {
+			log.Error("Unable to insert verification_link value: %v", err)
+			return err
 		}
 	}
 
