@@ -1,29 +1,31 @@
 # Running WriteFreely in Docker
 
-One `Dockerfile` builds two layouts, selected with `--target`.
+One image, one layout. The binary goes where binaries go, the assets
+where read-only shared data goes, and everything the instance writes into
+a single state directory.
 
-| | default | `--target fhs` |
-|---|---|---|
-| Built by | `docker build .` | `docker build --target fhs .` |
-| Used by | `docker-compose.yml` | `docker-compose.prod.yml` |
-| Published to a registry | yes, by CI | no, built locally |
-| Asset root | `/go` | `/usr/share/writefreely` |
-| Binary | `/go/cmd/writefreely/writefreely` | `/usr/bin/writefreely` |
-| Working directory | `/go` | `/data` |
-| Runs as | `daemon` | uid/gid 1000 |
-| Config lives at | `/go/config.ini` | `/data/config.ini` |
-| Keys live at | `/go/keys` (volume) | `/data/keys` |
+| Path | Holds |
+|---|---|
+| `/usr/bin/writefreely` | the binary |
+| `/usr/share/writefreely/` | `templates/`, `static/`, `pages/`, read-only |
+| `/var/lib/writefreely/` | `config.ini`, `keys/`, the SQLite database if used, `uploads/` |
 
-The default is what CI publishes, so a plain `docker build` gives you the
-same layout as the image on the registry. The `fhs` target arranges the
-same build the way a Linux daemon is usually packaged, with the binary in
-`/usr/bin`, assets in `/usr/share`, and everything the instance owns in a
-single `/data` directory. Use it when you would rather back up one folder
-than reason about volumes.
+That state directory is the only thing to back up, and the only volume
+either compose file mounts for the application. The container runs as uid
+1000 and its working directory is the state directory, so the binary
+finds `config.ini` without a `-c` flag.
 
-Both layouts share an entrypoint that generates encryption keys when they
-are absent, creates the schema on a first run and applies pending
-migrations, then runs the server.
+Put uploads there too, rather than leaving them under the asset tree:
+
+```ini
+[uploads]
+enabled = true
+dir = /var/lib/writefreely/uploads
+```
+
+The entrypoint generates encryption keys when they are absent, creates
+the schema on a first run and applies pending migrations, then runs the
+server.
 
 ## First run, development stack
 
@@ -116,26 +118,21 @@ upgrade.
 | Data | Where |
 |---|---|
 | Database | `db-data` named volume (mounted at `/config`, LinuxServer layout) |
-| Encryption keys | `web-keys` named volume |
+| Keys, uploads, SQLite database | `web-state` named volume at `/var/lib/writefreely` |
 | Configuration | `./config.ini` bind mount |
-| Uploaded images | `web-uploads` named volume |
 
 **Production stack:**
 
 | Data | Where |
 |---|---|
 | Database | `./dbdata` (LinuxServer layout: files sit under `./dbdata/databases`) |
-| Everything else | `./data` |
+| Everything else | `./data`, mounted at `/var/lib/writefreely` |
 
-Uploaded images deserve a specific note. They are written under the
-static asset tree, which is part of the image, so without a volume every
-upload is lost on the next `docker compose pull && up -d`. Both stacks
-mount one. If you are upgrading an existing deployment that predates
-this, copy the files out of the running container before recreating it:
-
-```sh
-docker cp writefreely-web:/go/static/uploads ./uploads-backup
-```
+Uploaded images default to a directory inside the static asset tree,
+which is part of the image, so without either a volume there or an
+`[uploads] dir` pointing into the state directory, every upload is lost
+on the next `docker compose pull && up -d`. Setting `dir` as shown above
+puts them on the state volume with everything else.
 
 ## Environment variables
 
@@ -181,8 +178,9 @@ it, `touch config.ini`, recreate the container.
 name — `writefreely-db` in the development stack, `db` in production —
 not `localhost`. A container's `localhost` is itself.
 
-**Permission denied writing to /data.** The production image runs as uid
-1000 and your `./data` is owned by someone else. `sudo chown -R 1000:1000 data`.
+**Permission denied writing to the state directory.** The image runs as
+uid 1000 and your `./data` is owned by someone else.
+`sudo chown -R 1000:1000 data`.
 
 **The container reports unhealthy but the site works.** Please report it.
 The healthcheck accepts any HTTP response as proof of life, so it should
@@ -212,7 +210,7 @@ service and point the config at a file on a volume:
 ```ini
 [database]
 type     = sqlite3
-filename = /data/writefreely.db
+filename = /var/lib/writefreely/writefreely.db
 ```
 
 Make sure the containing directory is on a volume, or the database is

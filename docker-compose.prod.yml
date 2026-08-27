@@ -13,17 +13,16 @@
 
 services:
   app:
-    # Built locally rather than pulled: this stack uses the fhs target,
-    # which is not the layout published to a registry.
     build:
       context: .
-      target: fhs
     image: writefreely:local
     container_name: writefreely
 
+    # One directory holds config, keys, the database if SQLite is used,
+    # and uploads. Point [uploads] dir at /var/lib/writefreely/uploads so
+    # user content lands here rather than in the read-only asset tree.
     volumes:
-      - ./data:/data
-      - ./uploads:/usr/share/writefreely/static/uploads
+      - ./data:/var/lib/writefreely
 
     ports:
       - 127.0.0.1:8080:8080

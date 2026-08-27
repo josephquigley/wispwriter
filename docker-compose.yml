@@ -5,13 +5,12 @@
 #   touch config.ini          (a bind-mounted file must exist, or Docker
 #                              creates a DIRECTORY with that name)
 #   docker compose up -d
-#   docker compose exec writefreely-web cmd/writefreely/writefreely --config
+#   docker compose exec writefreely-web writefreely --config
 #
 # See docs/docker.md for the full walkthrough.
 
 volumes:
-  web-keys:
-  web-uploads:
+  web-state:
   db-data:
 
 networks:
@@ -25,9 +24,8 @@ services:
     image: "writeas/writefreely:latest"
 
     volumes:
-      - "web-keys:/go/keys"
-      - "web-uploads:/go/static/uploads"
-      - "./config.ini:/go/config.ini"
+      - "web-state:/var/lib/writefreely"
+      - "./config.ini:/var/lib/writefreely/config.ini"
 
     networks:
       - "internal_writefreely"
