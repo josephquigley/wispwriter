@@ -36,7 +36,8 @@ RUN make build VERSION="$WRITEFREELY_VERSION" \
     && cp cmd/writefreely/writefreely /stage/cmd/writefreely/writefreely \
     && cp docker-entrypoint.sh /stage/docker-entrypoint.sh \
     && chmod +x /stage/docker-entrypoint.sh \
-    && cp -R templates static pages keys /stage
+    && cp -R templates static pages keys /stage \
+    && mkdir -p /stage/static/uploads
 
 # Final image
 FROM alpine:3.22
