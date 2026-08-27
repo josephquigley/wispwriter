@@ -52,6 +52,8 @@ func TestForkIdentity(t *testing.T) {
 	// the modified source rather than upstream's.
 	assert.NotContains(t, softwareRepoURL, "writefreely/writefreely",
 		"the source link must point at this fork, not upstream")
+	assert.Contains(t, softwareRepoURL, "colophon-edition",
+		"the source link must name this edition's repository")
 	assert.NotEqual(t, softwareVer, upstreamVer,
 		"the fork versions independently, so these should differ")
 }

@@ -69,7 +69,7 @@ var (
 	// softwareRepoURL is where the source for this modified build lives.
 	// The AGPL obliges a network-served modified work to offer its own
 	// source, not the source it was derived from.
-	softwareRepoURL = "https://github.com/josephquigley/writefreely"
+	softwareRepoURL = "https://github.com/josephquigley/writefreely-colophon-edition"
 	// upstreamVer is the WriteFreely release this fork is based on. The
 	// project's own documentation is versioned, so links to it must point at
 	// a release that exists upstream rather than at this fork's version.
