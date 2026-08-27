@@ -14,11 +14,16 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"regexp"
 
 	"github.com/gorilla/mux"
 	"github.com/writeas/impart"
 	"github.com/writeas/web-core/log"
 )
+
+// orphanImageHours is how long an uploaded image may go unattached to a post
+// before the sweep removes it.
+const orphanImageHours = 24
 
 // uploadedImage is the JSON representation of a stored image, as returned to
 // the editor.
@@ -155,4 +160,97 @@ func uploadHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Content-Disposition", "inline")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// imageURLPattern matches the URLs of images this instance hosts, so a post's
+// body can be scanned for the ones it uses.
+var imageURLPattern = regexp.MustCompile(`/` + uploadsDir + `/[0-9]+/[0-9a-f]{2}/([0-9a-f]{64})\.[a-z]+`)
+
+// attachPostImages records which of the user's uploaded images the given post
+// body uses, so the images stop being orphans and can be cleaned up with the
+// post. Failing to attach must never fail the save, so problems are logged
+// rather than returned.
+func attachPostImages(app *App, ownerID int64, postID, content string) {
+	if !app.cfg.Uploads.Enabled || postID == "" {
+		return
+	}
+
+	matches := imageURLPattern.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return
+	}
+
+	seen := map[string]bool{}
+	imageIDs := []string{}
+	for _, m := range matches {
+		sum := m[1]
+		if seen[sum] {
+			continue
+		}
+		seen[sum] = true
+
+		img, err := app.db.GetPostImageBySum(ownerID, sum)
+		if err != nil {
+			// Someone else's image, or one that's already gone.
+			continue
+		}
+		imageIDs = append(imageIDs, img.ID)
+	}
+
+	if err := app.db.AttachImagesToPost(ownerID, postID, imageIDs); err != nil {
+		log.Error("Unable to attach images to post %s: %v", postID, err)
+	}
+}
+
+// cleanUpPostImages removes the images that belonged to a just-deleted post,
+// keeping any that another post still references. The post is already gone by
+// the time this runs, so failures are logged rather than returned.
+func cleanUpPostImages(app *App, postID string) {
+	if !app.cfg.Uploads.Enabled {
+		return
+	}
+
+	imgs, err := app.db.GetImagesForPost(postID)
+	if err != nil {
+		log.Error("Unable to get images for deleted post %s: %v", postID, err)
+		return
+	}
+
+	for _, img := range *imgs {
+		removeImageIfUnreferenced(app, &img, postID)
+	}
+}
+
+// removeImageIfUnreferenced deletes an image's row and file if no post other
+// than excludingPostID still has its URL in the body.
+func removeImageIfUnreferenced(app *App, img *PostImage, excludingPostID string) {
+	refs, err := app.db.CountPostsReferencingImage(img.URL(), excludingPostID)
+	if err != nil {
+		log.Error("Unable to count references to image %s: %v", img.ID, err)
+		return
+	}
+	if refs > 0 {
+		return
+	}
+	if err = app.db.DeletePostImage(img.ID); err != nil {
+		log.Error("Unable to delete image %s: %v", img.ID, err)
+		return
+	}
+	if err = app.removeUploadedImage(img.RelPath()); err != nil {
+		log.Error("Unable to remove image file %s: %v", img.RelPath(), err)
+	}
+}
+
+// sweepOrphanedImages removes uploads that were never attached to a post --
+// what's left behind when a draft is abandoned after an image is dropped into
+// it.
+func sweepOrphanedImages(app *App) {
+	imgs, err := app.db.GetOrphanedImages(orphanImageHours)
+	if err != nil {
+		log.Error("[jobs] Unable to get orphaned images: %v", err)
+		return
+	}
+	for _, img := range *imgs {
+		removeImageIfUnreferenced(app, &img, "")
+	}
 }
