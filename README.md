@@ -1,20 +1,126 @@
-&nbsp;
+# WriteFreely (Colophon Edition)
 
-> **This is a modified version of WriteFreely.**
->
-> It is maintained as *WriteFreely (Colophon Edition)* and is not
-> affiliated with or endorsed by Musing Studio LLC or the WriteFreely
-> project. It is based on WriteFreely 0.17.2 and versions independently
-> from upstream, so its version numbers do not correspond to upstream
-> releases.
->
-> Where upstream keeps the core minimal and moves features into companion
-> services, this fork brings them in-tree. Changes include in-app image
-> uploads, multiple `rel="me"` verification links, per-blog control over
-> the email subscribe form, a post management view, pinned-post
-> reordering, and container fixes.
->
-> Source: <https://github.com/josephquigley/writefreely>
+**A modified version of [WriteFreely](https://github.com/writefreely/writefreely).**
+Not affiliated with or endorsed by Musing Studio LLC or the WriteFreely
+project.
+
+Based on **WriteFreely 0.17.2**. This edition versions independently, so its
+version numbers do not correspond to upstream releases — 0.18.0 here is not
+upstream's 0.18.0. Links to WriteFreely's documentation from within the
+application point at 0.17.2, the release this is built from.
+
+Upstream keeps the core deliberately minimal and moves features out into
+companion services — image hosting, for instance, lives on a separate site
+reached through a browser extension. This edition brings those capabilities
+in-tree, so a single self-hosted instance is self-sufficient.
+
+## What differs from upstream
+
+### Images are hosted by the instance
+
+Drag an image into the editor and it uploads to your own instance, inserting
+a Markdown link at the cursor. A thumbnail strip below the editor deletes an
+image from the server and strips its link from the post in one action. No
+companion service and no browser extension.
+
+Files are content-addressed on local disk under `static/uploads/`, so
+re-uploading identical bytes costs nothing. Images are reference-counted
+against post bodies: deleting a post or an image removes the file only when
+no other post still references it, and uploads abandoned in unsaved drafts
+are swept hourly. Uploads are re-encoded to strip EXIF — phone photos
+routinely carry GPS coordinates — and the type is decided by sniffing the
+content, never the filename or the submitted header. PNG, JPEG and GIF only;
+SVG is rejected because it can carry script, and WebP because decoding it
+would add a dependency. Configured under `[uploads]`, disabled by default.
+
+### A post management view
+
+`/me/c/{alias}/posts` lists a blog's posts as a compact table — title, date,
+pinned and scheduled badges, and the edit, pin, delete and move actions —
+so reaching an older post's controls no longer means scrolling the public
+index past every post body. Instance admins get the same view across all
+blogs at `/admin/posts`. Post bodies are never loaded for these pages.
+
+### Pinned posts can be reordered
+
+`/me/c/{alias}/pinned` lists the posts that make up a blog's navigation, with
+move-up, move-down and unpin controls. Every control is a form submission, so
+the page works without JavaScript, on mobile, and with a screen reader.
+
+This also repairs a latent problem: pinning only ever appended a position and
+unpinning left a gap behind, so positions drifted into sparse and occasionally
+duplicated sequences. They are now normalized to a dense order on every read
+and write.
+
+### Multiple `rel="me"` verification links
+
+A blog can declare any number of verification links instead of exactly one,
+added and removed as rows in the blog's settings. The first remains the
+canonical identity that `fediverse:creator` is derived from. Stored in the
+existing collection attribute, so no database migration is involved and a
+single pre-existing link upgrades silently.
+
+Note for API consumers: the `Collection` JSON now reads back
+`verification_links` as an array. Writes still accept `verification_link`.
+
+### Control over the subscribe form
+
+The email subscribe form now renders at the end of individual post pages,
+where upstream shows it only on the blog index — most readers arrive at a
+post directly and were never offered the subscription. Two independent
+per-blog toggles control each placement. Both default to on, so existing
+blogs are unchanged.
+
+### Fixes carried in this edition
+
+- **Owner links broke on single-user instances.** Pin, unpin, delete, the
+  subscribe redirect, and the blog links on the account and admin pages all
+  built `/<alias>/<slug>` URLs unconditionally. On a single-user instance the
+  blog is served at the site root, so every one of those 404'd. They were
+  gated on being the blog's owner, which is why anonymous readers never hit
+  them.
+- **CSRF rejected every protected request over plain HTTP.** `gorilla/csrf`
+  assumes TLS unless told otherwise: it set a Secure cookie the browser never
+  returned, and required an `https://` Referer that a browser on an http site
+  never sends. Saving settings, importing posts and removing an OAuth
+  connection all failed with a blanket 403.
+- **`UpdateCollection` panicked** on an attribute-only update, dereferencing a
+  `sql.Result` that is only assigned when there are column updates. Reachable
+  today through a monetization-only update.
+- **Builds could report no version at all.** The version was taken from
+  `git describe` and injected unconditionally, so any build context without a
+  usable git repository produced a binary whose version string was empty and
+  whose footer read a bare "v". Building from a git worktree does this every
+  time.
+
+### Container changes
+
+The shipped Docker setup had a data-loss bug and could not complete a first
+run. See [docs/docker.md](docs/docker.md) for the full guide, which upstream
+does not carry in-tree.
+
+- The development stack mounted its database volume at `/var/lib/mysql/data`
+  while MariaDB's data directory is `/var/lib/mysql`, so the database lived in
+  the container layer and was **destroyed on every recreate**.
+- The production stack bind-mounted `./db`, colliding with this repository's
+  own `db/` Go package and writing MariaDB's state into the source tree.
+- Neither stack could complete a first run: the entrypoint applied migrations
+  without creating the schema, and migrating an empty database leaves it
+  recorded at a version it never reached.
+- Committed database passwords, an app connecting as root, unpinned base
+  images, an end-of-life runtime image, OCI labels stranded in the build
+  stage, and a healthcheck that reported a working instance as unhealthy
+  whenever its landing page was not public.
+
+## Upstream
+
+Everything below this point is WriteFreely's own README, unchanged.
+Documentation, the writer's guide and the project itself live at
+**<https://writefreely.org>**, and the upstream source at
+**<https://github.com/writefreely/writefreely>**.
+
+---
+
 
 &nbsp;
 <p align="center">
