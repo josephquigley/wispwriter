@@ -11,6 +11,7 @@
 
 volumes:
   web-keys:
+  web-uploads:
   db-data:
 
 networks:
@@ -25,6 +26,7 @@ services:
 
     volumes:
       - "web-keys:/go/keys"
+      - "web-uploads:/go/static/uploads"
       - "./config.ini:/go/config.ini"
 
     networks:

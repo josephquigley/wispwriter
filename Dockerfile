@@ -54,6 +54,12 @@ ENV WRITEFREELY_DOCKER_PARENT_DIR=/go
 ENV WRITEFREELY_SERVICE_HINT=writefreely-web
 
 VOLUME /go/keys
+
+# Uploaded images are written under the static asset tree, which is part
+# of the image. Without a volume, every upload is destroyed on the next
+# container recreate -- which is what an image upgrade does.
+VOLUME /go/static/uploads
+
 EXPOSE 8080
 USER daemon
 
