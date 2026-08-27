@@ -120,3 +120,75 @@ func TestViewCollectionPostsRejectsNonOwner(t *testing.T) {
 	rec, _ := renderedRequest(t, router, "GET", "/me/c/"+coll.Alias+"/posts", cookies)
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+func TestViewAdminPosts(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	// IsAdmin is true for the instance's first user, so create the admin
+	// before anyone else.
+	admin, _, adminPost := createTemplateTestUser(t, app, "postsadmin")
+	assert.True(t, admin.IsAdmin())
+	_, otherColl, otherPost := createTemplateTestUser(t, app, "postsauthor")
+
+	cookies := []*http.Cookie{loginCookie(t, app, admin)}
+	rec := assertRendersCleanly(t, router, "GET", "/admin/posts", cookies, http.StatusOK)
+
+	body := rec.Body.String()
+	assert.Contains(t, body, "post-"+adminPost.ID)
+	assert.Contains(t, body, "post-"+otherPost.ID)
+	// The blog column names every post's own collection.
+	assert.Contains(t, body, "/"+otherColl.Alias+"/")
+}
+
+func TestViewAdminPostsRejectsNonAdmin(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	createTemplateTestUser(t, app, "theadmin")
+	u, _, _ := createTemplateTestUser(t, app, "notanadmin")
+	assert.False(t, u.IsAdmin())
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	rec, _ := renderedRequest(t, router, "GET", "/admin/posts", cookies)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestPostRowShowsPinnedState(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, post := createTemplateTestUser(t, app, "pinlister")
+
+	err := app.db.UpdatePostPinState(true, post.ID, coll.ID, u.ID, 1)
+	assert.NoError(t, err)
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	rec := assertRendersCleanly(t, router, "GET", "/me/c/"+coll.Alias+"/posts", cookies, http.StatusOK)
+
+	body := rec.Body.String()
+	assert.Contains(t, body, `<span class="badge pinned-badge">Pinned</span>`)
+	assert.Contains(t, body, ">unpin<")
+}
+
+func TestPostRowLabelsUntitledPostWithItsDate(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "untitledlister")
+
+	title := ""
+	content := "An untitled post, which has no title of its own."
+	untitled, err := app.db.CreatePost(u.ID, coll.ID, &SubmittedPost{Title: &title, Content: &content})
+	assert.NoError(t, err)
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	rec := assertRendersCleanly(t, router, "GET", "/me/c/"+coll.Alias+"/posts", cookies, http.StatusOK)
+
+	posts, _, err := app.db.GetCollectionPostsForOwner(coll.ID, 1)
+	assert.NoError(t, err)
+	var row *PublicPost
+	for i := range *posts {
+		if (*posts)[i].ID == untitled.ID {
+			row = &(*posts)[i]
+		}
+	}
+	assert.NotNil(t, row)
+	if row == nil {
+		return
+	}
+
+	assert.Contains(t, rec.Body.String(), ">"+row.DisplayDate+"</a>")
+}

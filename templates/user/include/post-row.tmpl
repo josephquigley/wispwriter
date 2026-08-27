@@ -13,14 +13,14 @@
         <a class="action" href="/{{if not .SingleUser}}{{.Alias}}/{{end}}{{.Post.Slug.String}}/edit">edit</a>
         <a class="pin action" href="/{{.Alias}}/{{.Post.Slug.String}}/pin" onclick="pinPost(event, '{{.Post.ID}}', '{{.Alias}}', {{if .Post.PinnedPosition.Valid}}true{{else}}false{{end}})">{{if .Post.PinnedPosition.Valid}}unpin{{else}}pin{{end}}</a>
         <a class="delete action" href="/{{.Alias}}/{{.Post.Slug.String}}/delete" onclick="delPost(event, '{{.Post.ID}}')">delete</a>
-        {{if gt (len .Collections) 1}}<span class="action flat-select">
+        {{if .Collections}}{{if gt (len .Collections) 1}}<span class="action flat-select">
             <select id="move-{{.Post.ID}}" onchange="postActions.multiMove(this, '{{.Post.ID}}', {{if .SingleUser}}true{{else}}false{{end}})" title="Move this post to another blog">
                 <option style="display:none"></option>
                 <option value="|anonymous|" style="font-style:italic">Draft</option>
                 {{range .Collections}}{{if ne .Alias $.Alias}}<option value="{{.Alias}}">{{.DisplayTitle}}</option>{{end}}{{end}}
             </select>
             <label for="move-{{.Post.ID}}">move to...</label>
-        </span>{{end}}
+        </span>{{end}}{{end}}
     </td>
 </tr>
 {{end}}

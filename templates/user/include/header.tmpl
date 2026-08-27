@@ -17,7 +17,7 @@
 				</nav>
 				<nav class="tabs">
 					<a href="/me/c/{{.UserPage.Username}}" {{if and (hasPrefix .Path "/me/c/") (hasSuffix .Path .UserPage.Username)}}class="selected"{{end}}>Customize</a>
-					<a href="/me/c/{{.UserPage.Username}}/posts" {{if hasSuffix .Path "/posts"}}class="selected"{{end}}>Posts</a>
+					<a href="/me/c/{{.UserPage.Username}}/posts" {{if and (hasPrefix .Path "/me/c/") (hasSuffix .Path "/posts")}}class="selected"{{end}}>Posts</a>
 					<a href="/me/c/{{.UserPage.Username}}/stats" {{if hasSuffix .Path "/stats"}}class="selected"{{end}}>Stats</a>
 					<a href="/me/c/{{.UserPage.Username}}/subscribers" {{if hasSuffix .Path "/subscribers"}}class="selected"{{end}}>Subscribers</a>
 					<a href="/me/posts/"{{if eq .Path "/me/posts/"}} class="selected"{{end}}>Drafts</a>
@@ -105,6 +105,7 @@
 	<nav id="admin" class="pager">
 		<a href="/admin" {{if eq .Path "/admin"}}class="selected"{{end}}>Dashboard</a>
 		<a href="/admin/settings" {{if eq .Path "/admin/settings"}}class="selected"{{end}}>Settings</a>
+		<a href="/admin/posts" {{if eq .Path "/admin/posts"}}class="selected"{{end}}>Posts</a>
 		{{if not .SingleUser}}
 			<a href="/admin/users" {{if eq .Path "/admin/users"}}class="selected"{{end}}>Users</a>
 			<a href="/admin/pages" {{if eq .Path "/admin/pages"}}class="selected"{{end}}>Pages</a>
