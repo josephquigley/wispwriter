@@ -22,6 +22,8 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/writefreely/writefreely/config"
 )
 
 // pinnedPositions returns the collection's pinned post IDs in nav order,
@@ -183,9 +185,26 @@ func TestViewPinnedPostsEmptyState(t *testing.T) {
 	u, coll, _ := createTemplateTestUser(t, app, "pinempty")
 
 	cookies := []*http.Cookie{loginCookie(t, app, u)}
-	_, _ = renderedRequest(t, router, "GET", "/me/c/"+coll.Alias+"/pinned", cookies)
 	rec := assertRendersCleanly(t, router, "GET", "/me/c/"+coll.Alias+"/pinned", cookies, http.StatusOK)
 	assert.Contains(t, rec.Body.String(), "no pinned posts")
+}
+
+// TestViewPinnedPostsMultiUser covers the blog navigation and breadcrumbs,
+// which the shared includes only render when the instance isn't single-user.
+// The test config defaults to single user, so every other test here would
+// skip straight past them.
+func TestViewPinnedPostsMultiUser(t *testing.T) {
+	app, router := newTemplateTestApp(t, func(cfg *config.Config) {
+		cfg.App.SingleUser = false
+	})
+	u, coll, _ := createTemplateTestUser(t, app, "pinmultiuser")
+	seedPinnedPosts(t, app, coll, []int64{1, 2})
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	rec := assertRendersCleanly(t, router, "GET", "/me/c/"+coll.Alias+"/pinned", cookies, http.StatusOK)
+	body := rec.Body.String()
+	assert.Contains(t, body, "/me/c/"+coll.Alias+"/stats", "the blog nav renders")
+	assert.Contains(t, body, `<a href="/me/c/`+coll.Alias+`/pinned" class="selected">Pinned Posts</a>`, "the nav links here and marks it current")
 }
 
 var csrfTokenRegex = regexp.MustCompile(`name="gorilla\.csrf\.Token" value="([^"]+)"`)
