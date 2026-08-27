@@ -74,7 +74,7 @@ Read our full [documentation on WriteFreely.org](https://writefreely.org/docs) &
 
 ## Development
 
-Start hacking on WriteFreely with our [developer setup guide](https://writefreely.org/docs/latest/developer/setup). For Docker support, see our [Docker guide](https://writefreely.org/docs/latest/admin/docker).
+Start hacking on WriteFreely with our [developer setup guide](https://writefreely.org/docs/latest/developer/setup). For Docker support, see [docs/docker.md](docs/docker.md) in this repository, or our [Docker guide](https://writefreely.org/docs/latest/admin/docker).
 
 ## Contributing
 
