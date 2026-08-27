@@ -11,12 +11,30 @@
 package writefreely
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
 	"github.com/writefreely/writefreely/config"
+	"github.com/writefreely/writefreely/key"
 )
+
+func TestServesPlaintextHTTP(t *testing.T) {
+	cases := map[string]bool{
+		"http://localhost:8080": true,
+		"HTTP://localhost:8080": true,
+		"https://example.com":   false,
+		"":                      false,
+	}
+	for host, want := range cases {
+		cfg := config.New()
+		cfg.App.Host = host
+		app := &App{cfg: cfg}
+		assert.Equal(t, want, app.servesPlaintextHTTP(), "host %q", host)
+	}
+}
 
 func TestCSRFOptionsRelaxSecureOnlyForPlainHTTPSites(t *testing.T) {
 	cases := []struct {
@@ -46,4 +64,26 @@ func TestCSRFOptionsRelaxSecureOnlyForPlainHTTPSites(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCSRFProtectHandlerDoesNotRecurse builds the handler and serves a
+// request through it. A self-referential wrapper compiles cleanly and only
+// fails at run time with a stack overflow, which is how this regressed
+// once already.
+func TestCSRFProtectHandlerDoesNotRecurse(t *testing.T) {
+	cfg := config.New()
+	cfg.App.Host = "http://localhost:8080"
+	app := &App{cfg: cfg, keys: &key.Keychain{}}
+	assert.NoError(t, app.keys.GenerateKeys())
+
+	called := false
+	h := csrfProtectHandler(app, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/me/settings", nil))
+	assert.True(t, called, "the wrapped handler must actually run")
+	assert.Equal(t, http.StatusOK, rec.Code)
 }
