@@ -199,13 +199,13 @@ textarea.section.norm {
 				{{range .Verifications}}
 				<div class="verification-row">
 					<input type="text" name="verification_link_row" value="{{.}}" placeholder="https://writing.exchange/@writefreely" />
-					<button type="button" class="remove-verification" title="Remove this link">&times;</button>
+					<button type="button" class="remove-verification" title="Remove this link" aria-label="Remove this link">&times;</button>
 				</div>
 				{{end}}
 				{{if not .Verifications}}
 				<div class="verification-row">
 					<input type="text" name="verification_link_row" value="" placeholder="https://writing.exchange/@writefreely" />
-					<button type="button" class="remove-verification" title="Remove this link">&times;</button>
+					<button type="button" class="remove-verification" title="Remove this link" aria-label="Remove this link">&times;</button>
 				</div>
 				{{end}}
 			</div>

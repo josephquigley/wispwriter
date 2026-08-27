@@ -31,6 +31,7 @@
 		remove.type = 'button';
 		remove.className = 'remove-verification';
 		remove.title = 'Remove this link';
+		remove.setAttribute('aria-label', 'Remove this link');
 		remove.innerHTML = '&times;';
 
 		row.appendChild(input);
