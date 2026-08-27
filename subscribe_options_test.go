@@ -11,6 +11,8 @@
 package writefreely
 
 import (
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/gorilla/mux"
@@ -185,4 +187,85 @@ func TestChorusPostPageSubscribeButtonRespectsToggle(t *testing.T) {
 
 	rec, _ = renderedRequest(t, router, "GET", path, nil)
 	assert.NotContains(t, rec.Body.String(), `id="subscribe-btn"`, "hidden when the toggle is off")
+}
+
+func TestSubscribeTogglesAreIndependent(t *testing.T) {
+	cases := []struct {
+		name         string
+		index, posts bool
+	}{
+		{"both on", true, true},
+		{"index only", true, false},
+		{"posts only", false, true},
+		{"both off", false, false},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			app, router := newSubscribeTestApp(t, nil)
+			u, coll, post := createTemplateTestUser(t, app, "indep"+strings.Replace(c.name, " ", "", -1))
+
+			enableEmailSubs(t, app, u, coll)
+			setSubscribeToggles(t, app, u, coll, c.index, c.posts)
+
+			rec, _ := renderedRequest(t, router, "GET", "/"+coll.Alias+"/", nil)
+			assert.Equal(t, c.index, strings.Contains(rec.Body.String(), `id="subscribe-btn"`),
+				"index page follows show_subscribe_index alone")
+
+			rec, _ = renderedRequest(t, router, "GET", "/"+coll.Alias+"/"+post.Slug.String, nil)
+			assert.Equal(t, c.posts, strings.Contains(rec.Body.String(), `id="subscribe-btn"`),
+				"post page follows show_subscribe_posts alone")
+		})
+	}
+}
+
+func TestNoSubscribeButtonWhenEmailSubscriptionsDisabled(t *testing.T) {
+	app, router := newSubscribeTestApp(t, func(cfg *config.Config) {
+		cfg.Email.Domain = ""
+		cfg.Email.MailgunPrivate = ""
+	})
+	assert.False(t, app.cfg.Email.Enabled(), "instance email delivery is off for this test")
+
+	u, coll, post := createTemplateTestUser(t, app, "nosubs")
+
+	on := true
+	err := app.db.UpdateCollection(app, &SubmittedCollection{
+		OwnerID:            uint64(u.ID),
+		Alias:              &coll.Alias,
+		ShowSubscribeIndex: &on,
+		ShowSubscribePosts: &on,
+	}, coll.Alias)
+	assert.NoError(t, err)
+
+	rec, _ := renderedRequest(t, router, "GET", "/"+coll.Alias+"/", nil)
+	assert.NotContains(t, rec.Body.String(), `id="subscribe-btn"`, "no index form")
+
+	rec, _ = renderedRequest(t, router, "GET", "/"+coll.Alias+"/"+post.Slug.String, nil)
+	assert.NotContains(t, rec.Body.String(), `id="subscribe-btn"`, "no post-page form")
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	rec, _ = renderedRequest(t, router, "GET", "/me/c/"+coll.Alias, cookies)
+	assert.NotContains(t, rec.Body.String(), `name="show_subscribe_index"`, "no settings block")
+	assert.NotContains(t, rec.Body.String(), `name="show_subscribe_posts"`, "no settings block")
+}
+
+func TestTogglingDoesNotAffectSubscribers(t *testing.T) {
+	app, _ := newSubscribeTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "keepsubs")
+
+	enableEmailSubs(t, app, u, coll)
+	_, err := app.db.AddEmailSubscription(coll.ID, 0, "reader@example.com", true)
+	assert.NoError(t, err)
+
+	before, err := app.db.GetEmailSubscribers(coll.ID, true)
+	assert.NoError(t, err)
+	assert.Len(t, before, 1)
+
+	setSubscribeToggles(t, app, u, coll, false, false)
+	setSubscribeToggles(t, app, u, coll, true, true)
+
+	after, err := app.db.GetEmailSubscribers(coll.ID, true)
+	assert.NoError(t, err)
+	assert.Len(t, after, 1, "toggling placement must not touch the subscriber list")
+	assert.Equal(t, before[0].Email, after[0].Email)
 }
