@@ -13,11 +13,11 @@
 
 services:
   app:
-    # Built locally rather than pulled: this stack uses Dockerfile.prod,
-    # which is not the image published to a registry.
+    # Built locally rather than pulled: this stack uses the fhs target,
+    # which is not the layout published to a registry.
     build:
       context: .
-      dockerfile: Dockerfile.prod
+      target: fhs
     image: writefreely:local
     container_name: writefreely
 

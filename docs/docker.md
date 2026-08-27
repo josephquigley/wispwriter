@@ -1,22 +1,29 @@
 # Running WriteFreely in Docker
 
-There are two images in this repository, for two different jobs.
+One `Dockerfile` builds two layouts, selected with `--target`.
 
-| | `Dockerfile` | `Dockerfile.prod` |
+| | default | `--target fhs` |
 |---|---|---|
+| Built by | `docker build .` | `docker build --target fhs .` |
 | Used by | `docker-compose.yml` | `docker-compose.prod.yml` |
 | Published to a registry | yes, by CI | no, built locally |
 | Asset root | `/go` | `/usr/share/writefreely` |
+| Binary | `/go/cmd/writefreely/writefreely` | `/usr/bin/writefreely` |
 | Working directory | `/go` | `/data` |
 | Runs as | `daemon` | uid/gid 1000 |
 | Config lives at | `/go/config.ini` | `/data/config.ini` |
 | Keys live at | `/go/keys` (volume) | `/data/keys` |
 
-Use the first for evaluation and development, and the second when you
-want a single `./data` directory holding everything the instance owns.
+The default is what CI publishes, so a plain `docker build` gives you the
+same layout as the image on the registry. The `fhs` target arranges the
+same build the way a Linux daemon is usually packaged, with the binary in
+`/usr/bin`, assets in `/usr/share`, and everything the instance owns in a
+single `/data` directory. Use it when you would rather back up one folder
+than reason about volumes.
 
-Both images share an entrypoint that generates encryption keys when they
-are absent and applies pending database migrations, then runs the server.
+Both layouts share an entrypoint that generates encryption keys when they
+are absent, creates the schema on a first run and applies pending
+migrations, then runs the server.
 
 ## First run, development stack
 

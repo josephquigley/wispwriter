@@ -23,7 +23,6 @@ static/local/custom.css
 
 # Container definitions themselves
 Dockerfile
-Dockerfile.prod
 docker-compose.yml
 docker-compose.prod.yml
 .dockerignore
