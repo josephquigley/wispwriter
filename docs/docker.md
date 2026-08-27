@@ -146,6 +146,21 @@ by the database container. Neither compose stack starts without them —
 deliberately, so that no deployment inherits a password published in this
 repository.
 
+## Stamping a version into the image
+
+Both Dockerfiles accept a build argument:
+
+```sh
+docker build --build-arg WRITEFREELY_VERSION=0.18.0 -t writefreely:0.18.0 .
+```
+
+Without it the build falls back to `git describe`, and then to the
+version compiled into `app.go`. The argument matters when the build
+context has no usable git repository -- building from a git worktree, for
+instance, where `.git` is a file pointing outside the context. Earlier
+builds injected the empty result and produced binaries whose footer read
+a bare "v".
+
 ## Upgrading
 
 ```sh
