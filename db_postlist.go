@@ -68,3 +68,49 @@ func (db *datastore) GetCollectionPostsForOwner(collID int64, page int) (*[]Publ
 	}
 	return &posts, total, nil
 }
+
+// GetAllPostsForAdmin returns one page of posts across every collection on
+// the instance, newest first, along with the total post count. It is used
+// only by the admin post management view. page is 1-indexed.
+func (db *datastore) GetAllPostsForAdmin(page int) (*[]PublicPost, int, error) {
+	if page < 1 {
+		page = 1
+	}
+
+	var total int
+	err := db.QueryRow("SELECT COUNT(*) FROM posts WHERE collection_id IS NOT NULL").Scan(&total)
+	if err != nil {
+		log.Error("get all posts for admin: count: %v", err)
+		return nil, 0, err
+	}
+
+	rows, err := db.Query("SELECT "+prefixedPostListCols+", c.alias FROM posts p "+
+		"INNER JOIN collections c ON c.id = p.collection_id "+
+		"ORDER BY p.created DESC LIMIT ? OFFSET ?",
+		postListPageSize, (page-1)*postListPageSize)
+	if err != nil {
+		log.Error("get all posts for admin: %v", err)
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	posts := []PublicPost{}
+	for rows.Next() {
+		p := &Post{}
+		var alias string
+		err = rows.Scan(&p.ID, &p.Slug, &p.Title, &p.Created, &p.Updated, &p.ViewCount,
+			&p.PinnedPosition, &p.CollectionID, &p.OwnerID, &alias)
+		if err != nil {
+			log.Error("scan admin post row: %v", err)
+			return nil, 0, err
+		}
+		pp := p.processPost()
+		pp.Collection = &CollectionObj{Collection: Collection{Alias: alias}}
+		posts = append(posts, pp)
+	}
+	if err = rows.Err(); err != nil {
+		log.Error("admin post rows: %v", err)
+		return nil, 0, err
+	}
+	return &posts, total, nil
+}
