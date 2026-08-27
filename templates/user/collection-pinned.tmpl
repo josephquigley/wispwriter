@@ -1,0 +1,49 @@
+{{define "collection-pinned"}}
+{{template "header" .}}
+
+<div class="snug content-container">
+	{{template "collection-breadcrumbs" (dict "Collection" .Collection "SingleUser" .SingleUser)}}
+
+	<h1>Pinned Posts</h1>
+
+	{{template "collection-nav" (dict "Alias" .Alias "Path" .Path "SingleUser" .SingleUser)}}
+
+	{{/* This page only ever flashes a confirmation, so it uses the alert
+	     style the other /me pages use for messages rather than
+	     ul.errors, which is styled as a warning: centred, italic and
+	     amber. */}}
+	{{if .Flashes}}{{range .Flashes}}<div class="alert success">
+		<p>{{.}}</p>
+	</div>{{end}}{{end}}
+
+	{{/* Where the script puts its confirmation, so the scripted path
+	     reports the same thing in the same place as the redirect path. */}}
+	<div id="pinned-flash"></div>
+
+	<p>These posts make up the navigation at the top of <a href="/{{.Alias}}/">{{.Collection.DisplayTitle}}</a>, in this order.</p>
+
+	{{if .PinnedPosts}}
+	<ol class="pinned-list" id="pinned-list" data-action-base="/me/c/{{$.Alias}}/pinned">
+		{{range $i, $p := .PinnedPosts}}
+		<li class="pinned-item" data-post-id="{{$p.ID}}">
+			<span class="pinned-title"><a href="/{{$.Alias}}/{{$p.Slug.String}}">{{$p.PlainDisplayTitle}}</a></span>
+			<span class="pinned-controls">
+				{{if gt $i 0}}
+				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/up">{{$.CSRFField}}<button type="submit" class="pinned-move" title="Move up" aria-label="Move up">&#9650;</button></form>
+				{{end}}
+				{{if lt $i $.LastIndex}}
+				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/down">{{$.CSRFField}}<button type="submit" class="pinned-move" title="Move down" aria-label="Move down">&#9660;</button></form>
+				{{end}}
+				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/remove">{{$.CSRFField}}<button type="submit" class="pinned-unpin" title="Remove from navigation">Unpin</button></form>
+			</span>
+		</li>
+		{{end}}
+	</ol>
+	{{else}}
+	<p>This blog has no pinned posts. Pin a post from your blog's main page to add it to the navigation.</p>
+	{{end}}
+</div>
+
+<script src="/js/pinned-reorder.js"></script>
+{{template "footer" .}}
+{{end}}
