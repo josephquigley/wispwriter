@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -883,6 +884,8 @@ func (db *datastore) GetCollectionBy(condition string, value interface{}) (*Coll
 	c.Public = c.IsPublic()
 	c.Monetization = db.GetCollectionAttribute(c.ID, "monetization_pointer")
 	c.Verification = db.GetCollectionAttribute(c.ID, "verification_link")
+	c.ShowSubscribeIndex = collectionAttributeBool(db.GetCollectionAttribute(c.ID, "show_subscribe_index"), true)
+	c.ShowSubscribePosts = collectionAttributeBool(db.GetCollectionAttribute(c.ID, "show_subscribe_posts"), true)
 
 	c.db = db
 
@@ -953,7 +956,7 @@ func (db *datastore) UpdateCollection(app *App, c *SubmittedCollection, alias st
 	// WHERE values
 	q.Where("alias = ? AND owner_id = ?", alias, c.OwnerID)
 
-	if q.Updates == "" && c.Monetization == nil {
+	if q.Updates == "" && c.Monetization == nil && c.ShowSubscribeIndex == nil && c.ShowSubscribePosts == nil {
 		return ErrPostNoUpdatableVals
 	}
 
@@ -1047,6 +1050,23 @@ func (db *datastore) UpdateCollection(app *App, c *SubmittedCollection, alias st
 		}
 	}
 
+	// Update subscribe form placement values. Both are pointers, so an
+	// update that doesn't mention them leaves the stored values alone.
+	if c.ShowSubscribeIndex != nil {
+		err = db.SetCollectionAttribute(collID, "show_subscribe_index", strconv.FormatBool(*c.ShowSubscribeIndex))
+		if err != nil {
+			log.Error("Unable to insert show_subscribe_index value: %v", err)
+			return err
+		}
+	}
+	if c.ShowSubscribePosts != nil {
+		err = db.SetCollectionAttribute(collID, "show_subscribe_posts", strconv.FormatBool(*c.ShowSubscribePosts))
+		if err != nil {
+			log.Error("Unable to insert show_subscribe_posts value: %v", err)
+			return err
+		}
+	}
+
 	// Update EmailSub value
 	if c.EmailSubs {
 		err = db.SetCollectionAttribute(collID, "email_subs", "1")
@@ -1090,7 +1110,9 @@ func (db *datastore) UpdateCollection(app *App, c *SubmittedCollection, alias st
 		}
 	}
 
-	rowsAffected, _ = res.RowsAffected()
+	if res != nil {
+		rowsAffected, _ = res.RowsAffected()
+	}
 	if !changed || rowsAffected == 0 {
 		// Show the correct error message if nothing was updated
 		var dummy int
