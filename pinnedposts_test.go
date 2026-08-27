@@ -386,6 +386,38 @@ func TestPinnedActionRejectsGET(t *testing.T) {
 	assert.Equal(t, []int64{1, 2}, gotPos)
 }
 
+// TestPinnedActionReportsUnpinToXHR covers the confirmation reaching the
+// scripted path. A flash is only rendered by the next page load, and that
+// path never reloads, so the message travels in the response instead --
+// and no flash is stashed, which would otherwise surface later on an
+// unrelated page.
+func TestPinnedActionReportsUnpinToXHR(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "xhrunpin")
+	ids := seedPinnedPosts(t, app, coll, []int64{1, 2})
+
+	cookies, token := pinnedPageSession(t, app, router, u, coll.Alias)
+	path := "/me/c/" + coll.Alias + "/pinned/" + ids[0] + "/remove"
+	req := httptest.NewRequest("POST", path,
+		strings.NewReader(url.Values{"gorilla.csrf.Token": {token}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Referer", "https://"+req.Host+path)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "navigation", "the response carries the confirmation")
+
+	// Re-rendering the page must not also show it: no flash was stashed.
+	rec2 := assertRendersCleanly(t, router, "GET", "/me/c/"+coll.Alias+"/pinned", cookies, http.StatusOK)
+	assert.NotContains(t, rec2.Body.String(), unpinnedMessage,
+		"a flash stashed for an XHR would surface on a later page")
+}
+
 // TestPinnedActionAnswersXHRWithoutRedirect covers the response the page's
 // own script relies on. A redirect would make the browser fetch and
 // discard the whole page for every reorder, so an XHR gets an
@@ -412,7 +444,7 @@ func TestPinnedActionAnswersXHRWithoutRedirect(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusNoContent, rec.Code, "body: %s", rec.Body.String())
+	assert.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
 	assert.Empty(t, rec.Header().Get("Location"), "an XHR must not be redirected")
 
 	// The reorder still happened.

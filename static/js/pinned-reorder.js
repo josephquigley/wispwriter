@@ -40,6 +40,26 @@
 		return null;
 	}
 
+	// Report what the server said, in the same markup the page uses for a
+	// flash. The scripted path never reloads, so without this the
+	// confirmation would only turn up on some later page.
+	function report(message) {
+		var slot = document.getElementById('pinned-flash');
+		if (!slot) {
+			return;
+		}
+		slot.innerHTML = '';
+		if (!message) {
+			return;
+		}
+		var box = document.createElement('div');
+		box.className = 'alert success';
+		var p = document.createElement('p');
+		p.appendChild(document.createTextNode(message));
+		box.appendChild(p);
+		slot.appendChild(box);
+	}
+
 	function setBusy(on) {
 		busy = on;
 		list.className = on ? 'pinned-list is-busy' : 'pinned-list';
@@ -179,20 +199,33 @@
 				form.submit();
 				return;
 			}
-			apply(form, li);
+			var message = '';
+			try {
+				var res = JSON.parse(http.responseText);
+				message = (res.data && res.data.message) || '';
+			} catch (err) {
+				// A response we cannot read is not worth failing over:
+				// the action itself succeeded.
+			}
+			apply(form, li, message);
 			setBusy(false);
 		};
 		http.send(encodeForm(form));
 	});
 
-	function apply(form, li) {
+	function apply(form, li, message) {
 		if (/\/remove$/.test(form.action)) {
 			collapse(li, function() {
 				li.parentNode.removeChild(li);
 				syncControls();
+				report(message);
 			});
 			return;
 		}
+
+		// A move has nothing to report, and leaving the last confirmation
+		// on screen would attach it to whatever the reader just did.
+		report('');
 
 		var up = /\/up$/.test(form.action);
 		var other = up ? li.previousElementSibling : li.nextElementSibling;

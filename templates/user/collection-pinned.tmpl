@@ -16,6 +16,10 @@
 		<p>{{.}}</p>
 	</div>{{end}}{{end}}
 
+	{{/* Where the script puts its confirmation, so the scripted path
+	     reports the same thing in the same place as the redirect path. */}}
+	<div id="pinned-flash"></div>
+
 	<p>These posts make up the navigation at the top of <a href="/{{.Alias}}/">{{.Collection.DisplayTitle}}</a>, in this order.</p>
 
 	{{if .PinnedPosts}}

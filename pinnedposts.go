@@ -19,6 +19,12 @@ import (
 	"github.com/writeas/impart"
 )
 
+// pinnedActionResult is what the page's script receives after a reorder or
+// an unpin. Message is empty for actions that have nothing to report.
+type pinnedActionResult struct {
+	Message string `json:"message"`
+}
+
 // pinnedPostsPage is the view data for the pinned post management page.
 type pinnedPostsPage struct {
 	*UserPage
@@ -49,6 +55,11 @@ func ownedPinnedCollection(app *App, u *User, r *http.Request) (*Collection, err
 	c.hostName = app.cfg.App.Host
 	return c, nil
 }
+
+// unpinnedMessage confirms a post was removed from the navigation. Both
+// the redirect path and the scripted path report it, so it lives in one
+// place rather than being repeated in the template.
+const unpinnedMessage = "Removed that post from your blog's navigation."
 
 // isXHR reports whether the request came from the page's own script
 // rather than from a plain form submission.
@@ -121,7 +132,13 @@ func handlePinnedPostAction(app *App, u *User, w http.ResponseWriter, r *http.Re
 		if err := app.db.UpdatePostPinState(false, postID, c.ID, u.ID, 0); err != nil {
 			return err
 		}
-		_ = addSessionFlash(app, w, r, "Removed that post from your blog's navigation.", nil)
+		// A flash is only shown by the next page render. The scripted
+		// path never reloads, so stashing one there would leave it to
+		// appear later on an unrelated page; that request carries the
+		// message in its response instead.
+		if !isXHR(r) {
+			_ = addSessionFlash(app, w, r, unpinnedMessage, nil)
+		}
 	} else {
 		neighbor, err := app.db.GetAdjacentPinnedPost(c.ID, u.ID, postID, action == "up")
 		if err != nil {
@@ -141,14 +158,18 @@ func handlePinnedPostAction(app *App, u *User, w http.ResponseWriter, r *http.Re
 		return err
 	}
 
-	// The page enhances these forms with fetch when scripting is
-	// available. Answering those with a redirect would have the browser
-	// re-render the whole page just to discard it, so acknowledge and let
-	// the script update the list in place. Without scripting the form
-	// submits normally and the redirect is what reloads the page.
+	// The page enhances these forms with a background request when
+	// scripting is available. Answering those with a redirect would have
+	// the browser re-render the whole page just to discard it, so return
+	// the outcome and let the script update the list in place. Without
+	// scripting the form submits normally and the redirect reloads the
+	// page.
 	if isXHR(r) {
-		w.WriteHeader(http.StatusNoContent)
-		return nil
+		msg := ""
+		if action == "remove" {
+			msg = unpinnedMessage
+		}
+		return impart.WriteSuccess(w, pinnedActionResult{Message: msg}, http.StatusOK)
 	}
 
 	return impart.HTTPError{http.StatusFound, "/me/c/" + c.Alias + "/pinned"}
