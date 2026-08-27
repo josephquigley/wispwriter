@@ -4,6 +4,8 @@
 Not affiliated with or endorsed by Musing Studio LLC or the WriteFreely
 project.
 
+Source for this edition: **<https://github.com/josephquigley/writefreely-colophon-edition>**
+
 Based on **WriteFreely 0.17.2**. This edition versions independently, so its
 version numbers do not correspond to upstream releases — 0.18.0 here is not
 upstream's 0.18.0. Links to WriteFreely's documentation from within the
