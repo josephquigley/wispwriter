@@ -2,9 +2,12 @@
 #
 # Before the first run:
 #   cp .env.example .env       and edit the passwords
-#   mkdir -p data && sudo chown -R 1000:1000 data
+#   mkdir -p data db && sudo chown -R 1000:1000 data
 #   docker compose -f docker-compose.prod.yml up -d --build
-#   docker compose -f docker-compose.prod.yml exec app writefreely --config
+#   docker compose -f docker-compose.prod.yml run --rm app writefreely --config
+#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml exec app \
+#       writefreely --create-admin youruser:yourpassword
 #
 # See docs/docker.md for the full walkthrough.
 
@@ -32,28 +35,36 @@ services:
     restart: unless-stopped
 
   db:
-    image: mariadb:11.4
+    # LinuxServer's image, as this stack has always used. Its PUID/PGID
+    # handling is why: every piece of state here is a bind mount into this
+    # directory, and this image adopts the ownership you ask for instead of
+    # requiring the host directory be pre-chowned. Its data lives under
+    # /config/databases, hence the mount path.
+    #
+    # Pinned to the 11.4 LTS series rather than tracking latest, so a major
+    # MariaDB upgrade is a deliberate act.
+    image: lscr.io/linuxserver/mariadb:11.4.5
     container_name: writefreely-mariadb
 
     volumes:
-      - ./db:/var/lib/mysql
+      - ./db:/config
 
     environment:
+      - PUID=${PUID:-65534}
+      - PGID=${PGID:-65534}
       - TZ=${TZ:-Etc/UTC}
-      - MARIADB_DATABASE=writefreely
-      - MARIADB_USER=writefreely
-      - MARIADB_PASSWORD=${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
-      - MARIADB_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      - MYSQL_DATABASE=writefreely
+      - MYSQL_USER=writefreely
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
 
-    command:
-      - "--character-set-server=utf8mb4"
-      - "--collation-server=utf8mb4_unicode_ci"
-
+    # This image ships mariadb-admin, not the official image's
+    # healthcheck.sh, so the check is written against what is actually here.
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u writefreely -p\"$$MYSQL_PASSWORD\" --silent"]
       interval: 10s
       timeout: 5s
-      retries: 12
+      retries: 18
       start_period: 30s
 
     restart: unless-stopped
