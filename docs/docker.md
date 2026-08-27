@@ -50,12 +50,13 @@ Username  writefreely
 Password  <MYSQL_PASSWORD>
 ```
 
-Then initialize the schema and create your admin account:
+Then create your admin account and start the stack. The schema is created
+automatically on the first start, so there is no separate init step:
 
 ```sh
-docker compose run --rm -e WRITEFREELY_INIT_DB=true writefreely-web \
-    cmd/writefreely/writefreely --create-admin youruser:yourpassword
 docker compose up -d
+docker compose exec writefreely-web \
+    cmd/writefreely/writefreely --create-admin youruser:yourpassword
 ```
 
 WriteFreely is now on <http://localhost:8080>.
@@ -69,9 +70,9 @@ mkdir -p data db
 sudo chown -R 1000:1000 data     # the image runs as uid 1000
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml run --rm app writefreely --config
-docker compose -f docker-compose.prod.yml run --rm \
-    -e WRITEFREELY_INIT_DB=true app writefreely --create-admin youruser:yourpassword
 docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml exec app \
+    writefreely --create-admin youruser:yourpassword
 ```
 
 The database host is `db`, and everything the instance owns lives in
@@ -119,7 +120,7 @@ docker cp writefreely-web:/go/static/uploads ./uploads-backup
 | `WRITEFREELY_DOCKER` | set in both images | Tells `--config` it is running in a container: bind `0.0.0.0`, use container asset paths |
 | `WRITEFREELY_DOCKER_PARENT_DIR` | per image | Asset root the configurator writes into the config |
 | `WRITEFREELY_AUTO_MIGRATE` | `true` | Apply pending migrations on start |
-| `WRITEFREELY_INIT_DB` | `false` | Create the schema on start. First run only |
+| `WRITEFREELY_INIT_DB` | `auto` | Create the schema on start. `auto` initializes when the keys also had to be generated, i.e. on a first run. `true` forces it, `false` disables it |
 | `WRITEFREELY_CONFIG` | `config.ini` | Config file the entrypoint looks for |
 | `WRITEFREELY_KEYS_DIR` | `keys` | Directory the entrypoint checks for keys |
 
@@ -165,6 +166,13 @@ not false-negative on a password-protected or unconfigured instance.
 
 **Uploaded images disappeared after an upgrade.** The uploads volume was
 missing. See the note above.
+
+**`migrate: no such table: appcontent`, or `Table 'writefreely.appcontent'
+doesn't exist`.** Migrations ran against a database with no schema, which
+leaves it stamped at a version it never reached. Recreate the database
+from empty and start again; the entrypoint creates the schema on a first
+run, so this should only happen if `WRITEFREELY_INIT_DB=false` was set on
+a fresh instance.
 
 **`Invalid database type 'sqlite'. Only 'mysql' and 'sqlite3' are
 supported right now.`** The driver name in `config.ini` is `sqlite3`, not
