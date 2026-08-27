@@ -605,6 +605,35 @@ p {
 	}
 }
 
+ol.pinned-list {
+	width: 95%;
+	padding-left: 1.5rem;
+
+	li.pinned-item {
+		padding: 0.5rem 0;
+
+		& + li.pinned-item {
+			border-top: 1px solid #ccc;
+		}
+	}
+
+	.pinned-title {
+		margin-right: 1em;
+	}
+
+	.pinned-controls {
+		float: right;
+		white-space: nowrap;
+
+		// Each control is its own form so that the page needs no
+		// JavaScript, and forms are block-level by default.
+		form {
+			display: inline-block;
+			margin: 0 0 0 0.25em;
+		}
+	}
+}
+
 table.classy {
 	width: 95%;
 	border-collapse: collapse;

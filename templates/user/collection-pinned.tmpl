@@ -21,10 +21,10 @@
 			<span class="pinned-title"><a href="/{{$.Alias}}/{{$p.Slug.String}}">{{$p.PlainDisplayTitle}}</a></span>
 			<span class="pinned-controls">
 				{{if gt $i 0}}
-				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/up">{{$.CSRFField}}<button type="submit" title="Move up">&#9650;<span class="sr-only"> Move up</span></button></form>
+				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/up">{{$.CSRFField}}<button type="submit" class="pinned-move" title="Move up" aria-label="Move up">&#9650;</button></form>
 				{{end}}
 				{{if lt $i $.LastIndex}}
-				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/down">{{$.CSRFField}}<button type="submit" title="Move down">&#9660;<span class="sr-only"> Move down</span></button></form>
+				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/down">{{$.CSRFField}}<button type="submit" class="pinned-move" title="Move down" aria-label="Move down">&#9660;</button></form>
 				{{end}}
 				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/remove">{{$.CSRFField}}<button type="submit" title="Remove from navigation">Unpin</button></form>
 			</span>
