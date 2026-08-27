@@ -1,0 +1,40 @@
+{{define "collection-pinned"}}
+{{template "header" .}}
+
+<div class="snug content-container">
+	{{template "collection-breadcrumbs" (dict "Collection" .Collection "SingleUser" .SingleUser)}}
+
+	<h1>Pinned Posts</h1>
+
+	{{template "collection-nav" (dict "Alias" .Alias "Path" .Path "SingleUser" .SingleUser)}}
+
+	{{if .Flashes}}<ul class="errors">
+		{{range .Flashes}}<li class="urgent">{{.}}</li>{{end}}
+	</ul>{{end}}
+
+	<p>These posts make up the navigation at the top of <a href="/{{.Alias}}/">{{.Collection.DisplayTitle}}</a>, in this order.</p>
+
+	{{if .PinnedPosts}}
+	<ol class="pinned-list">
+		{{range $i, $p := .PinnedPosts}}
+		<li class="pinned-item">
+			<span class="pinned-title"><a href="/{{$.Alias}}/{{$p.Slug.String}}">{{$p.PlainDisplayTitle}}</a></span>
+			<span class="pinned-controls">
+				{{if gt $i 0}}
+				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/up">{{$.CSRFField}}<button type="submit" title="Move up">&#9650;<span class="sr-only"> Move up</span></button></form>
+				{{end}}
+				{{if lt $i $.LastIndex}}
+				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/down">{{$.CSRFField}}<button type="submit" title="Move down">&#9660;<span class="sr-only"> Move down</span></button></form>
+				{{end}}
+				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/remove">{{$.CSRFField}}<button type="submit" title="Remove from navigation">Unpin</button></form>
+			</span>
+		</li>
+		{{end}}
+	</ol>
+	{{else}}
+	<p>This blog has no pinned posts. Pin a post from your blog's main page to add it to the navigation.</p>
+	{{end}}
+</div>
+
+{{template "footer" .}}
+{{end}}
