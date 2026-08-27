@@ -1,4 +1,13 @@
-version: "3"
+# Development / evaluation stack.
+#
+# Before the first run:
+#   cp .env.example .env      and edit the passwords
+#   touch config.ini          (a bind-mounted file must exist, or Docker
+#                              creates a DIRECTORY with that name)
+#   docker compose up -d
+#   docker compose exec writefreely-web cmd/writefreely/writefreely --config
+#
+# See docs/docker.md for the full walkthrough.
 
 volumes:
   web-keys:
@@ -26,22 +35,45 @@ services:
       - "8080:8080"
 
     depends_on:
-      - "writefreely-db"
+      writefreely-db:
+        # Wait for the database to accept connections. A plain depends_on
+        # only waits for the container to start, so the app would come up
+        # first and fail its initial connection.
+        condition: service_healthy
 
     restart: unless-stopped
 
   writefreely-db:
     container_name: "writefreely-db"
-    image: "mariadb:latest"
+    image: "mariadb:11.4"
 
+    # MariaDB's data directory is /var/lib/mysql. Mounting the volume at
+    # /var/lib/mysql/data -- as this file previously did -- persists an
+    # empty subdirectory the server never writes to, leaving the real
+    # database in the container layer to be destroyed on recreate.
     volumes:
-      - "db-data:/var/lib/mysql/data"
+      - "db-data:/var/lib/mysql"
 
     networks:
       - "internal_writefreely"
 
     environment:
-      - MYSQL_DATABASE=writefreely
-      - MYSQL_ROOT_PASSWORD=changeme
+      - MARIADB_DATABASE=writefreely
+      - MARIADB_USER=writefreely
+      - MARIADB_PASSWORD=${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      - MARIADB_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+
+    # WriteFreely stores UTF-8 content including emoji, and relies on
+    # consistent collation for signature and tag lookups.
+    command:
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
     restart: unless-stopped
