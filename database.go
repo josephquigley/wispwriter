@@ -107,6 +107,7 @@ type writestore interface {
 	UpdatePostPinState(pinned bool, postID string, collID, ownerID, pos int64) error
 	GetLastPinnedPostPos(collID int64) int64
 	GetPinnedPosts(coll *CollectionObj, includeFuture bool) (*[]PublicPost, error)
+	NormalizePinnedPositions(collID int64) error
 	RemoveCollectionRedirect(t *sql.Tx, alias string) error
 	GetCollectionRedirect(alias string) (new string)
 	IsCollectionAttributeOn(id int64, attr string) bool
