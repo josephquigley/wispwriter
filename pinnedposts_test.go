@@ -12,6 +12,7 @@ package writefreely
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -139,4 +140,35 @@ func TestSwapPinnedPositionsRejectsForeignPost(t *testing.T) {
 
 	_, gotPos := pinnedPositions(t, app, coll.ID)
 	assert.Equal(t, []int64{1, 2}, gotPos, "nothing may be written on rejection")
+}
+
+func TestViewPinnedPosts(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "pinviewer")
+	seedPinnedPosts(t, app, coll, []int64{1, 2})
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	rec := assertRendersCleanly(t, router, "GET", "/me/c/"+coll.Alias+"/pinned", cookies, http.StatusOK)
+	assert.Contains(t, rec.Body.String(), "Pinned 1")
+	assert.Contains(t, rec.Body.String(), "Pinned 2")
+}
+
+func TestViewPinnedPostsRejectsNonOwner(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	_, coll, _ := createTemplateTestUser(t, app, "pinowner")
+	other, _, _ := createTemplateTestUser(t, app, "pinintruder")
+
+	cookies := []*http.Cookie{loginCookie(t, app, other)}
+	rec, _ := renderedRequest(t, router, "GET", "/me/c/"+coll.Alias+"/pinned", cookies)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestViewPinnedPostsEmptyState(t *testing.T) {
+	app, router := newTemplateTestApp(t, nil)
+	u, coll, _ := createTemplateTestUser(t, app, "pinempty")
+
+	cookies := []*http.Cookie{loginCookie(t, app, u)}
+	_, _ = renderedRequest(t, router, "GET", "/me/c/"+coll.Alias+"/pinned", cookies)
+	rec := assertRendersCleanly(t, router, "GET", "/me/c/"+coll.Alias+"/pinned", cookies, http.StatusOK)
+	assert.Contains(t, rec.Body.String(), "no pinned posts")
 }
