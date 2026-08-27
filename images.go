@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/writeas/impart"
@@ -79,7 +80,7 @@ func handleUploadImage(app *App, u *User, w http.ResponseWriter, r *http.Request
 		return impart.HTTPError{http.StatusBadRequest, "Couldn't read the uploaded file."}
 	}
 
-	stored, mime, ext, err := decodeAndReencode(data, app.cfg.AllowedUploadTypes())
+	stored, mime, ext, err := prepareUpload(data)
 	if err != nil {
 		if err == errUnsupportedImageType {
 			return impart.HTTPError{http.StatusUnsupportedMediaType, "That file type isn't supported."}
@@ -154,10 +155,28 @@ func handleDeleteImage(app *App, u *User, w http.ResponseWriter, r *http.Request
 
 // uploadHeaders hardens the responses served for uploaded files. This is
 // defense in depth behind the type allow-list, not a substitute for it.
+// uploadHeaders serves uploaded files with the headers that make hosting
+// them from the instance's own origin safe.
+//
+// The sandbox directive is the primary control: it loads the response into
+// an opaque origin with scripting disabled, so script embedded in an
+// uploaded file cannot act as the signed-in user. It is enforced by the
+// browser and does not depend on this server parsing the file correctly.
+//
+// SVG additionally serves as an attachment. Content-Disposition applies to
+// navigations but not to subresources, so an SVG referenced from a post
+// with <img> still renders, while opening its URL directly downloads it
+// rather than loading it as a document.
 func uploadHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Content-Disposition", "inline")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+		if strings.HasSuffix(strings.ToLower(r.URL.Path), ".svg") {
+			w.Header().Set("Content-Type", svgMIME)
+			w.Header().Set("Content-Disposition", "attachment")
+		} else {
+			w.Header().Set("Content-Disposition", "inline")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

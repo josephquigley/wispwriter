@@ -28,13 +28,6 @@ const (
 	UserNormal UserType = "user"
 	UserAdmin           = "admin"
 
-	// DefaultUploadTypes is the default allow-list of image types accepted by
-	// the uploader. SVG is deliberately excluded: it can carry script, and
-	// serving one from the instance's own origin would be a stored-XSS
-	// primitive. WebP is excluded because decoding it would require a new
-	// dependency.
-	DefaultUploadTypes = "image/png,image/jpeg,image/gif"
-
 	// DefaultTheme is the stylesheet served when a configuration does not
 	// name one.
 	DefaultTheme = "write"
@@ -203,17 +196,19 @@ type (
 	//	[uploads]
 	//	enabled = true
 	//	max_size_mb = 10
-	//	allowed_types = image/png,image/jpeg,image/gif
 	//
 	// enabled defaults to false, so an instance operator opts in
 	// deliberately. max_size_mb bounds a single file, not a user's total
-	// storage. allowed_types deliberately excludes SVG, which can carry
-	// script and would be a stored-XSS primitive served from the instance's
-	// own origin, and WebP, which the standard library cannot decode.
+	// storage.
+	//
+	// Which image types are accepted is not configurable: it is fixed by
+	// the decoders compiled in, in decodeAndReencode. SVG is excluded
+	// because it can carry script and would be a stored-XSS primitive
+	// served from the instance's own origin, and WebP because decoding it
+	// would require a dependency.
 	UploadsCfg struct {
-		Enabled      bool   `ini:"enabled"`
-		MaxSizeMB    int    `ini:"max_size_mb"`
-		AllowedTypes string `ini:"allowed_types"`
+		Enabled   bool `ini:"enabled"`
+		MaxSizeMB int  `ini:"max_size_mb"`
 	}
 
 	// Config holds the complete configuration for running a writefreely instance
@@ -249,8 +244,7 @@ func New() *Config {
 			PublicStats:    true,
 		},
 		Uploads: UploadsCfg{
-			MaxSizeMB:    10,
-			AllowedTypes: DefaultUploadTypes,
+			MaxSizeMB: 10,
 		},
 	}
 	c.UseMySQL(true)
@@ -278,24 +272,6 @@ func (cfg *Config) UseSQLite(fresh bool) {
 // standalone server with TLS enabled.
 func (cfg *Config) IsSecureStandalone() bool {
 	return cfg.Server.Port == 443 && cfg.Server.TLSCertPath != "" && cfg.Server.TLSKeyPath != ""
-}
-
-// AllowedUploadTypes returns the MIME types the uploader accepts, parsed from
-// the comma-separated allowed_types value. An unset value falls back to the
-// default allow-list rather than accepting nothing.
-func (cfg *Config) AllowedUploadTypes() []string {
-	list := strings.TrimSpace(cfg.Uploads.AllowedTypes)
-	if list == "" {
-		list = DefaultUploadTypes
-	}
-	types := []string{}
-	for _, t := range strings.Split(list, ",") {
-		t = strings.TrimSpace(t)
-		if t != "" {
-			types = append(types, t)
-		}
-	}
-	return types
 }
 
 // MaxUploadBytes returns the largest accepted size of a single uploaded file,

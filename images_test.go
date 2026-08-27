@@ -35,7 +35,6 @@ func TestUploadConfigDefaults(t *testing.T) {
 	cfg := config.New()
 	assert.False(t, cfg.Uploads.Enabled, "uploads are opt-in")
 	assert.Equal(t, 10, cfg.Uploads.MaxSizeMB)
-	assert.Equal(t, []string{"image/png", "image/jpeg", "image/gif"}, cfg.AllowedUploadTypes())
 }
 
 func TestPostImagesTableExists(t *testing.T) {
@@ -352,13 +351,55 @@ func TestImageUploadRejectsHTMLNamedAsPNG(t *testing.T) {
 	assert.Equal(t, 0, countUploadedFiles(t, app))
 }
 
-func TestImageUploadRejectsSVG(t *testing.T) {
-	app, _, u, _ := newImageTestApp(t)
+func TestImageUploadAcceptsSVGAndServesItSafely(t *testing.T) {
+	_, router, _, cookies := newImageTestApp(t)
 
-	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)
-	_, status := doUpload(t, app, u, uploadRequest(t, "logo.png", "image/png", svg))
-	assert.Equal(t, http.StatusUnsupportedMediaType, status, "SVG must be refused whatever it claims to be")
-	assert.Equal(t, 0, countUploadedFiles(t, app))
+	padReq := httptest.NewRequest("GET", "/me/new", nil)
+	for _, c := range cookies {
+		padReq.AddCookie(c)
+	}
+	padRec := httptest.NewRecorder()
+	router.ServeHTTP(padRec, padReq)
+	m := regexp.MustCompile(`csrfToken: "([^"]*)"`).FindStringSubmatch(padRec.Body.String())
+	assert.NotNil(t, m)
+	if m == nil {
+		return
+	}
+
+	svg := []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>`)
+	req := uploadRequest(t, "diagram.svg", "image/svg+xml", svg)
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	for _, c := range padRec.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	req.Header.Set("X-CSRF-Token", m[1])
+	// gorilla/csrf assumes TLS on this branch, so this is the Origin a
+	// browser would send over HTTPS.
+	req.Header.Set("Origin", "https://example.com")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var res struct {
+		Data struct {
+			URL string `json:"url"`
+		} `json:"data"`
+	}
+	assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+	assert.True(t, strings.HasSuffix(res.Data.URL, ".svg"), "got %q", res.Data.URL)
+
+	// Serving it must sandbox the response and force a download on
+	// navigation, so script inside it can never run in this origin.
+	getRec := httptest.NewRecorder()
+	router.ServeHTTP(getRec, httptest.NewRequest("GET", res.Data.URL, nil))
+	assert.Equal(t, http.StatusOK, getRec.Code)
+	assert.Contains(t, getRec.Header().Get("Content-Security-Policy"), "sandbox")
+	assert.Equal(t, "attachment", getRec.Header().Get("Content-Disposition"))
+	assert.Equal(t, "image/svg+xml", getRec.Header().Get("Content-Type"))
+	assert.Equal(t, "nosniff", getRec.Header().Get("X-Content-Type-Options"))
 }
 
 func TestImageUploadDeduplicates(t *testing.T) {

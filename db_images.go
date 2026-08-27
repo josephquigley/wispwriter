@@ -40,13 +40,7 @@ type PostImage struct {
 // Ext returns the file extension the image is stored under, derived from its
 // sniffed MIME type rather than from anything the client sent.
 func (i *PostImage) Ext() string {
-	switch i.Mime {
-	case "image/jpeg":
-		return "jpg"
-	case "image/gif":
-		return "gif"
-	}
-	return "png"
+	return extForMIME(i.Mime)
 }
 
 // RelPath returns the image's path relative to the uploads directory.
