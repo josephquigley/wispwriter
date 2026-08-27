@@ -128,6 +128,37 @@ textarea.section.norm {
 		</div>
 	</div>
 
+	{{/* Only meaningful once this blog has email subscriptions switched on
+	     in the Updates section above: with them off, neither placement
+	     renders whatever these are set to. */}}
+	{{if and .EmailCfg.Enabled .EmailSubsEnabled}}
+	<div class="option">
+		<h2>Subscribe form</h2>
+		<div class="section">
+			<p class="explain">Choose where readers are offered the email subscribe form.</p>
+			<ul style="list-style:none">
+				<!-- An unchecked checkbox submits nothing at all, which is
+				     indistinguishable from "field omitted" and would make these
+				     impossible to turn off. The hidden input guarantees a value
+				     is always submitted; the checkbox that follows it wins,
+				     because gorilla/schema keeps the last value for a field. -->
+				<li>
+					<input type="hidden" name="show_subscribe_index" value="false" />
+					<label class="option-text"><input type="checkbox" name="show_subscribe_index" value="true" {{if .ShowSubscribeIndex}}checked="checked"{{end}} />
+						Show the subscribe form on my blog's main page
+					</label>
+				</li>
+				<li>
+					<input type="hidden" name="show_subscribe_posts" value="false" />
+					<label class="option-text"><input type="checkbox" name="show_subscribe_posts" value="true" {{if .ShowSubscribePosts}}checked="checked"{{end}} />
+						Show the subscribe form at the end of each post
+					</label>
+				</li>
+			</ul>
+		</div>
+	</div>
+	{{end}}
+
 	<div class="option">
 		<h2>Display Format</h2>
 		<div class="section">

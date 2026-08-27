@@ -38,6 +38,7 @@ import (
 	"github.com/writeas/web-core/tags"
 	"github.com/writefreely/writefreely/page"
 	"github.com/writefreely/writefreely/parse"
+	"github.com/writefreely/writefreely/spam"
 )
 
 const (
@@ -158,6 +159,24 @@ type (
 		IsAdmin         bool
 		CanInvite       bool
 		Silenced        bool
+
+		// Fields read by the shared "emailsubscribe" template block, which
+		// was written for the blog index and reaches them there through the
+		// embedded Collection. A post page's data has the collection in a
+		// named field instead, so they're repeated at the top level here.
+		//
+		// Alias is the blog's alias.
+		Alias string
+		// EmailSubsEnabled reports whether this blog is accepting email
+		// subscriptions.
+		EmailSubsEnabled bool
+		// IsSubscriber reports whether the viewer is already subscribed.
+		IsSubscriber bool
+		// Honeypot is the name of the spam-trap form field.
+		Honeypot string
+		// ShowSubscribePosts mirrors the blog's own setting, deciding
+		// whether the subscribe form renders at the end of this page.
+		ShowSubscribePosts bool
 
 		// Helper field for Chorus mode
 		CollAlias string
@@ -1675,6 +1694,13 @@ Are you sure it was ever here?` + shortCodeNoSig,
 		}
 		tp.IsAdmin = u != nil && u.IsAdmin()
 		tp.CanInvite = canUserInvite(app.cfg, tp.IsAdmin)
+		tp.Alias = c.Alias
+		tp.Honeypot = spam.HoneypotFieldName()
+		tp.EmailSubsEnabled = app.cfg.Email.Enabled() && c.EmailSubsEnabled()
+		tp.ShowSubscribePosts = c.ShowSubscribePosts
+		if u != nil {
+			tp.IsSubscriber = u.IsEmailSubscriber(app, c.ID)
+		}
 		tp.PinnedPosts, _ = app.db.GetPinnedPosts(coll, p.IsOwner)
 		tp.IsPinned = len(*tp.PinnedPosts) > 0 && PostsContains(tp.PinnedPosts, p)
 		tp.Monetization = coll.Monetization
