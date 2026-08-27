@@ -13,11 +13,13 @@ package writefreely
 import (
 	"bytes"
 	"encoding/binary"
+	"github.com/writefreely/writefreely/config"
 	"image"
 	"image/color"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"os"
 	"strings"
 	"testing"
 
@@ -245,4 +247,32 @@ func TestExtForMIMEMatchesPrepareUpload(t *testing.T) {
 				"unexpected extension %q for %s", ext, c.name)
 		})
 	}
+}
+
+func TestEnsureUploadsWritable(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.New()
+	cfg.Server.StaticParentDir = dir
+	app := &App{cfg: cfg}
+
+	// Creates the directory when it is missing, rather than requiring the
+	// deployment to have made it.
+	assert.NoError(t, app.ensureUploadsWritable())
+	info, err := os.Stat(app.uploadsRoot())
+	assert.NoError(t, err)
+	assert.True(t, info.IsDir())
+
+	// Leaves nothing behind.
+	entries, err := os.ReadDir(app.uploadsRoot())
+	assert.NoError(t, err)
+	assert.Empty(t, entries)
+
+	// Reports a directory it cannot write to, which is how a container
+	// image with a root-owned uploads directory presents.
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; permissions are not enforced")
+	}
+	assert.NoError(t, os.Chmod(app.uploadsRoot(), 0500))
+	t.Cleanup(func() { os.Chmod(app.uploadsRoot(), 0755) })
+	assert.Error(t, app.ensureUploadsWritable())
 }

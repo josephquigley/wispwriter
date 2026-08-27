@@ -15,6 +15,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
@@ -188,4 +189,30 @@ func (app *App) removeUploadedImage(relPath string) error {
 		return nil
 	}
 	return err
+}
+
+// ensureUploadsWritable verifies the uploads directory exists and can be
+// written to, creating it if necessary.
+//
+// Without this an instance starts happily and only fails when a writer
+// first drags in an image, with a 507 and a log line nobody is watching.
+// The two ways it goes wrong in practice -- a container image whose
+// uploads directory is owned by root while the process runs unprivileged,
+// and a deployment that forgot to mount a volume for it -- are both
+// present from the moment the process starts, so they are worth reporting
+// then.
+func (app *App) ensureUploadsWritable() error {
+	root := app.uploadsRoot()
+	if err := os.MkdirAll(root, 0755); err != nil {
+		return fmt.Errorf("uploads directory %s cannot be created: %s", root, err)
+	}
+
+	probe := filepath.Join(root, ".writable")
+	f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("uploads directory %s is not writable: %s", root, err)
+	}
+	f.Close()
+	os.Remove(probe)
+	return nil
 }
