@@ -661,6 +661,25 @@ ol.pinned-list {
 			padding-right: 0;
 			text-align: center;
 		}
+
+		// Unpin reads as a link rather than a third button: it is a
+		// different kind of action from reordering, and giving it equal
+		// visual weight made a destructive action the heaviest thing on
+		// the row. It stays a form submit so the page needs no JavaScript
+		// and the action stays a POST.
+		button.pinned-unpin {
+			background: none;
+			border: none;
+			padding: 0 0 0 0.5em;
+			color: @primary;
+			cursor: pointer;
+			text-decoration: none;
+
+			&:hover, &:focus {
+				background: none;
+				text-decoration: underline;
+			}
+		}
 	}
 }
 

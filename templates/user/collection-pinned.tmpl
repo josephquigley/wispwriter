@@ -26,7 +26,7 @@
 				{{if lt $i $.LastIndex}}
 				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/down">{{$.CSRFField}}<button type="submit" class="pinned-move" title="Move down" aria-label="Move down">&#9660;</button></form>
 				{{end}}
-				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/remove">{{$.CSRFField}}<button type="submit" title="Remove from navigation">Unpin</button></form>
+				<form method="post" action="/me/c/{{$.Alias}}/pinned/{{$p.ID}}/remove">{{$.CSRFField}}<button type="submit" class="pinned-unpin" title="Remove from navigation">Unpin</button></form>
 			</span>
 		</li>
 		{{end}}
