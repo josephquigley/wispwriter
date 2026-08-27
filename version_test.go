@@ -32,3 +32,22 @@ func TestSoftwareVersionIsSet(t *testing.T) {
 	assert.NotEqual(t, serverSoftware+" ", v, "FormatVersion must carry a version, not just the product name")
 	assert.False(t, strings.HasSuffix(v, " "), "got %q", v)
 }
+
+// TestForkIdentity pins which surfaces carry the fork's edition name and
+// which must keep identifying as plain WriteFreely to other machines.
+func TestForkIdentity(t *testing.T) {
+	assert.Equal(t, "WriteFreely (Untethered Edition)", FormatSoftwareName())
+	assert.Equal(t, "WriteFreely (Untethered Edition) "+softwareVer, FormatVersion())
+
+	// Machine-facing identity is deliberately unchanged: NodeInfo reports
+	// strings.ToLower(serverSoftware), and the User-Agent and Server header
+	// use serverSoftware directly. A fork advertising itself under a
+	// different name would misreport to fediverse crawlers.
+	assert.Equal(t, "WriteFreely", serverSoftware)
+	assert.NotContains(t, serverSoftware, "(")
+
+	// Documentation links must resolve to a release that exists upstream.
+	assert.NotEmpty(t, upstreamVer)
+	assert.NotEqual(t, softwareVer, upstreamVer,
+		"the fork versions independently, so these should differ")
+}
