@@ -15,13 +15,17 @@ either compose file mounts for the application. The container runs as uid
 1000 and its working directory is the state directory, so the binary
 finds `config.ini` without a `-c` flag.
 
-Put uploads there too, rather than leaving them under the asset tree:
+Uploads land there too, without any configuration: the image sets
+`WRITEFREELY_UPLOADS_DIR`, which the application uses when `[uploads] dir`
+is not set. So enabling uploads is all that is required, and they are
+durable across image upgrades by default.
 
 ```ini
 [uploads]
 enabled = true
-dir = /var/lib/writefreely/uploads
 ```
+
+Set `dir` if you want them somewhere else, and it takes precedence.
 
 The entrypoint generates encryption keys when they are absent, creates
 the schema on a first run and applies pending migrations, then runs the
@@ -128,11 +132,10 @@ upgrade.
 | Database | `./dbdata` (LinuxServer layout: files sit under `./dbdata/databases`) |
 | Everything else | `./data`, mounted at `/var/lib/writefreely` |
 
-Uploaded images default to a directory inside the static asset tree,
-which is part of the image, so without either a volume there or an
-`[uploads] dir` pointing into the state directory, every upload is lost
-on the next `docker compose pull && up -d`. Setting `dir` as shown above
-puts them on the state volume with everything else.
+Uploaded images live on the state volume with everything else, because
+the image points `WRITEFREELY_UPLOADS_DIR` there. Overriding
+`[uploads] dir` with a path outside that volume puts them back inside the
+container, where the next `docker compose pull && up -d` discards them.
 
 ## Environment variables
 
@@ -143,6 +146,7 @@ puts them on the state volume with everything else.
 | `WRITEFREELY_AUTO_MIGRATE` | `true` | Apply pending migrations on start |
 | `WRITEFREELY_INIT_DB` | `auto` | Create the schema on start. `auto` initializes when the keys also had to be generated, i.e. on a first run. `true` forces it, `false` disables it |
 | `WRITEFREELY_CONFIG` | `config.ini` | Config file the entrypoint looks for |
+| `WRITEFREELY_UPLOADS_DIR` | `/var/lib/writefreely/uploads` | Where uploads are kept when `[uploads] dir` is unset |
 | `WRITEFREELY_KEYS_DIR` | `keys` | Directory the entrypoint checks for keys |
 
 `MYSQL_PASSWORD` and `MYSQL_ROOT_PASSWORD` come from `.env` and are read

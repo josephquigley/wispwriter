@@ -60,6 +60,10 @@ COPY --from=build /go/src/github.com/writefreely/writefreely/templates /usr/shar
 # 0.0.0.0 rather than localhost, and points it at the asset root.
 ENV WRITEFREELY_DOCKER=True
 ENV WRITEFREELY_DOCKER_PARENT_DIR=/usr/share/writefreely
+# Uploads belong with the rest of the writable state, not in the asset
+# tree that ships with the image, where an upgrade would discard them.
+# An explicit [uploads] dir still overrides this.
+ENV WRITEFREELY_UPLOADS_DIR=/var/lib/writefreely/uploads
 ENV WRITEFREELY_SERVICE_HINT=app
 ENV HOME=/var/lib/writefreely
 
@@ -68,9 +72,7 @@ ENV HOME=/var/lib/writefreely
 WORKDIR /var/lib/writefreely
 
 # Everything the instance writes lives here: config, keys, a SQLite
-# database if used, and uploads. Point [uploads] dir at
-# /var/lib/writefreely/uploads so user content lands here too rather than
-# in the read-only asset tree.
+# database if used, and uploads.
 VOLUME /var/lib/writefreely
 
 EXPOSE 8080
