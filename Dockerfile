@@ -41,14 +41,12 @@ LABEL org.opencontainers.image.source="https://github.com/writefreely/writefreel
 LABEL org.opencontainers.image.description="WriteFreely is a clean, minimalist publishing platform made for writers. Start a blog, share knowledge within your organization, or build a community around the shared act of writing."
 LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
-ENV WRITEFREELY_STATE_DIR=/var/lib/writefreely
-
 RUN apk -U upgrade \
     && apk add --no-cache openssl ca-certificates \
-    && mkdir -p /usr/share/writefreely "$WRITEFREELY_STATE_DIR/uploads" \
+    && mkdir -p /usr/share/writefreely /var/lib/writefreely/uploads \
     && addgroup -g 1000 writefreely \
-    && adduser -u 1000 -G writefreely -h "$WRITEFREELY_STATE_DIR" -D writefreely \
-    && chown -R writefreely:writefreely "$WRITEFREELY_STATE_DIR"
+    && adduser -u 1000 -G writefreely -h /var/lib/writefreely -D writefreely \
+    && chown -R writefreely:writefreely /var/lib/writefreely
 
 COPY --from=build /go/src/github.com/writefreely/writefreely/cmd/writefreely/writefreely /usr/bin/writefreely
 COPY --from=build --chmod=755 /go/src/github.com/writefreely/writefreely/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
@@ -60,10 +58,6 @@ COPY --from=build /go/src/github.com/writefreely/writefreely/templates /usr/shar
 # 0.0.0.0 rather than localhost, and points it at the asset root.
 ENV WRITEFREELY_DOCKER=True
 ENV WRITEFREELY_DOCKER_PARENT_DIR=/usr/share/writefreely
-# Uploads belong with the rest of the writable state, not in the asset
-# tree that ships with the image, where an upgrade would discard them.
-# An explicit [uploads] dir still overrides this.
-ENV WRITEFREELY_UPLOADS_DIR=/var/lib/writefreely/uploads
 ENV WRITEFREELY_SERVICE_HINT=app
 ENV HOME=/var/lib/writefreely
 
@@ -72,7 +66,7 @@ ENV HOME=/var/lib/writefreely
 WORKDIR /var/lib/writefreely
 
 # Everything the instance writes lives here: config, keys, a SQLite
-# database if used, and uploads.
+# database if used, and uploads, which [uploads] dir should point at.
 VOLUME /var/lib/writefreely
 
 EXPOSE 8080
