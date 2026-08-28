@@ -59,7 +59,6 @@ COPY --from=build /go/src/github.com/writefreely/writefreely/templates /usr/shar
 ENV WRITEFREELY_DOCKER=True
 ENV WRITEFREELY_DOCKER_PARENT_DIR=/usr/share/writefreely
 ENV WRITEFREELY_SERVICE_HINT=app
-ENV HOME=/var/lib/writefreely
 
 # The working directory is the state directory, so the binary's default
 # config.ini lookup finds the mounted one without a -c flag.

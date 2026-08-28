@@ -47,7 +47,7 @@ The web container will exit on its first start, reporting that it has no
 configuration. That is expected. Generate one:
 
 ```sh
-docker compose run --rm writefreely-web cmd/writefreely/writefreely --config
+docker compose run --rm writefreely-web /usr/bin/writefreely --config
 ```
 
 Answer `Production, behind reverse proxy` unless you know otherwise, and
@@ -67,7 +67,7 @@ automatically on the first start, so there is no separate init step:
 ```sh
 docker compose up -d
 docker compose exec writefreely-web \
-    cmd/writefreely/writefreely --create-admin youruser:yourpassword
+    /usr/bin/writefreely --create-admin youruser:yourpassword
 ```
 
 WriteFreely is now on <http://localhost:8080>.

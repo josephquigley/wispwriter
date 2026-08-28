@@ -21,11 +21,26 @@ networks:
 services:
   writefreely-web:
     container_name: "writefreely-web"
-    image: "writeas/writefreely:latest"
+
+    # Built from this checkout rather than pulled. The mount paths below are
+    # the image's own layout, so a published tag that predates a change to
+    # that layout would leave this file mounting a config the app never
+    # reads. Building here keeps the two in step.
+    #
+    # To evaluate a release instead, replace build/image with
+    #   image: "ghcr.io/josephquigley/writefreely-colophon-edition:latest"
+    build:
+      context: .
+    image: writefreely:local
 
     volumes:
       - "web-state:/var/lib/writefreely"
       - "./config.ini:/var/lib/writefreely/config.ini"
+
+    # Names this stack's service in the entrypoint's "generate a config"
+    # message, which otherwise reads as the production stack's name.
+    environment:
+      - WRITEFREELY_SERVICE_HINT=writefreely-web
 
     networks:
       - "internal_writefreely"
