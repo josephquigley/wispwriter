@@ -215,3 +215,31 @@ body {
 		}
 	}
 }
+
+body#pad, body#pad-sub {
+	#image-strip {
+		.pad-theme-transition;
+	}
+
+	&.light {
+		#image-strip {
+			background: @lightNavHoverBG;
+			border-top-color: @lightNavBorder;
+			.remove-image {
+				background: @lightLinkColor;
+				color: @lightNavBG;
+			}
+		}
+	}
+
+	&.dark {
+		#image-strip {
+			background: @darkNavBG;
+			border-top-color: @darkNavBorder;
+			.remove-image {
+				background: @darkNavHoverBG;
+				color: @darkTextColor;
+			}
+		}
+	}
+}
