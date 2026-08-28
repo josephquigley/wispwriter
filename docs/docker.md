@@ -1,74 +1,74 @@
 # Running WriteFreely in Docker
 
-There are two images in this repository, for two different jobs.
+There is one image, built from the `runtime` stage of the single
+`Dockerfile`, and two compose files that run it.
 
-| | `Dockerfile` | `Dockerfile.prod` |
+| | `docker-compose.yml` | `docker-compose.prod.yml` |
 |---|---|---|
-| Used by | `docker-compose.yml` | `docker-compose.prod.yml` |
-| Published to a registry | yes, by CI | no, built locally |
-| Asset root | `/go` | `/usr/share/writefreely` |
-| Working directory | `/go` | `/data` |
-| Runs as | `daemon` | uid/gid 1000 |
-| Config lives at | `/go/config.ini` | `/data/config.ini` |
-| Keys live at | `/go/keys` (volume) | `/data/keys` |
+| Image | built from this checkout | pulled from ghcr.io |
+| Compose project | `writefreely-dev` | `writefreely` |
+| Published port | `8080` on all interfaces | `127.0.0.1:8080` |
+| Mail | Mailpit, caught locally | your real SMTP or Mailgun |
 
-Use the first for evaluation and development, and the second when you
-want a single `./data` directory holding everything the instance owns.
+Use the first to work on the code, the second to serve a site. Everything
+else about them is the same, because they run the same image:
 
-Both images share an entrypoint that generates encryption keys when they
-are absent and applies pending database migrations, then runs the server.
+| | |
+|---|---|
+| Asset root | `/usr/share/writefreely` |
+| Working directory | `/data` |
+| Runs as | `PUID`:`PGID` from `.env`, defaulting to 1000 |
+| Config lives at | `/data/config.ini` |
+| Keys live at | `/data/keys` |
+
+The image ships an entrypoint that generates encryption keys when they are
+absent, creates the schema on a first run and applies pending migrations,
+then runs the server.
 
 ## First run, development stack
 
 ```sh
 cp .env.example .env
 $EDITOR .env                 # set MYSQL_PASSWORD and MYSQL_ROOT_PASSWORD
-touch config.ini             # see the warning below
-docker compose up -d
+mkdir -p data uploads dbdata
+docker compose up -d --build
 ```
 
-`config.ini` must exist as a *file* before the first `up`. Docker creates
-a **directory** in its place if it does not, and the container then fails
-in a way that looks unrelated. If that happens, `rm -rf config.ini`,
-`touch config.ini`, and recreate.
-
-The web container will exit on its first start, reporting that it has no
+The app container will exit on its first start, reporting that it has no
 configuration. That is expected. Generate one:
 
 ```sh
-docker compose run --rm writefreely-web cmd/writefreely/writefreely --config
+docker compose run --rm app writefreely --config
 ```
 
 Answer `Production, behind reverse proxy` unless you know otherwise, and
 give the database section these values, matching your `.env`:
 
 ```
-Host      writefreely-db
+Host      db
 Port      3306
 Database  writefreely
 Username  writefreely
 Password  <MYSQL_PASSWORD>
 ```
 
-Then create your admin account and start the stack. The schema is created
-automatically on the first start, so there is no separate init step:
+Then create your admin account and start the stack:
 
 ```sh
 docker compose up -d
-docker compose exec writefreely-web \
-    cmd/writefreely/writefreely --create-admin youruser:yourpassword
+docker compose exec app writefreely --create-admin youruser:yourpassword
 ```
 
-WriteFreely is now on <http://localhost:8080>.
+WriteFreely is now on <http://localhost:8080>, and Mailpit is on
+<http://localhost:8025>.
 
 ## First run, production stack
 
 ```sh
 cp .env.example .env
 $EDITOR .env
-mkdir -p data dbdata
-sudo chown -R 1000:1000 data     # the app image runs as uid 1000
-docker compose -f docker-compose.prod.yml up -d --build
+mkdir -p data uploads dbdata
+docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml run --rm app writefreely --config
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml exec app \
@@ -78,53 +78,109 @@ docker compose -f docker-compose.prod.yml exec app \
 The database host is `db`, and everything the instance owns lives in
 `./data`.
 
-Both stacks use LinuxServer's MariaDB image. Its `PUID`/`PGID`
-settings decide who owns the files it writes, which is what lets the
-production stack work from bind mounts without you pre-chowning the
-database directory. Its data directory is `/config/databases`, not
-`/var/lib/mysql` -- so if you ever swap it for the official `mariadb`
-image, the existing files are not where that image looks and it will not
-migrate them for you.
-
-That image boots through s6 init and expects to start the server itself,
-so do not add a `command:` override to either database service. It
-already defaults to `utf8mb4` / `utf8mb4_general_ci`; anything else goes
-in `/config/custom.cnf`, which it writes on first start.
-
-Note that `schema.sql` declares `DEFAULT CHARSET=latin1` on every table
-it creates, so the server-level character set matters less than it looks
--- the application connects with `charset=utf8mb4` regardless.
-
 This stack binds to `127.0.0.1:8080`, so put a reverse proxy in front of
 it and terminate TLS there.
+
+To pin a release instead of tracking `latest`, set `WRITEFREELY_IMAGE` in
+`.env`.
+
+## File ownership
+
+Both containers run as `PUID`:`PGID` from `.env`, which default to
+1000:1000. Every piece of state is a bind mount (`./data`, `./uploads`,
+`./dbdata`), and a bind mount keeps whatever ownership it has on the host,
+so those ids are what decide whether the containers can write.
+
+On most Linux hosts the first human user is uid 1000 and the defaults are
+already correct. If yours is not, say so rather than chowning the
+directories to a user that is not you:
+
+```sh
+echo "PUID=$(id -u)" >> .env
+echo "PGID=$(id -g)" >> .env
+```
+
+On macOS, Docker Desktop remaps bind-mount ownership and these values make
+no difference either way.
+
+The database service is LinuxServer's MariaDB image, which reads the same
+two variables and adopts that ownership for the files it writes. Its data
+directory is `/config/databases`, not `/var/lib/mysql`, so if you ever
+swap it for the official `mariadb` image, the existing files are not where
+that image looks and it will not migrate them for you.
+
+That image boots through s6 init and expects to start the server itself,
+so do not add a `command:` override to either database service. It already
+defaults to `utf8mb4` / `utf8mb4_general_ci`; anything else goes in
+`/config/custom.cnf`, which it writes on first start.
+
+Note that `schema.sql` declares `DEFAULT CHARSET=latin1` on every table it
+creates, so the server-level character set matters less than it looks: the
+application connects with `charset=utf8mb4` regardless.
+
+## Sending mail
+
+WriteFreely reads its mail settings from `config.ini`, not from the
+environment, and sends through either SMTP or the Mailgun API. Password
+resets and invites are silently unavailable until one is configured.
+
+The development stack runs [Mailpit](https://mailpit.axllent.org/), which
+accepts everything and delivers nothing. Read what the app sent at
+<http://localhost:8025>. It authenticates any credentials, but WriteFreely
+only builds an SMTP mailer when a username and a password are both set, so
+give it something:
+
+```ini
+[email]
+smtp_host             = mailpit
+smtp_port             = 1025
+smtp_username         = dev
+smtp_password         = dev
+smtp_enable_start_tls = false
+```
+
+In production, point the same section at a real relay:
+
+```ini
+[email]
+smtp_host             = smtp.example.com
+smtp_port             = 587
+smtp_username         = writefreely@example.com
+smtp_password         = <password>
+smtp_enable_start_tls = true
+```
+
+Or use the Mailgun API instead, which takes precedence when both are
+present:
+
+```ini
+[email]
+domain          = mail.example.com
+mailgun_private = <private API key>
+mailgun_europe  = false
+```
+
+Mailpit is deliberately absent from the production stack. Nothing stops
+you adding it for a smoke test, but a catcher left in front of a live
+instance swallows every password reset.
 
 ## What persists, and what does not
 
 Anything not on this list lives in the container's writable layer and is
-destroyed when the container is recreated — which happens on every image
-upgrade.
-
-**Development stack:**
+destroyed when the container is recreated, which happens on every image
+upgrade. Both stacks use the same three bind mounts:
 
 | Data | Where |
 |---|---|
-| Database | `db-data` named volume (mounted at `/config`, LinuxServer layout) |
-| Encryption keys | `web-keys` named volume |
-| Configuration | `./config.ini` bind mount |
-| Uploaded images | `web-uploads` named volume |
+| Configuration, keys, SQLite database if used | `./data` |
+| Uploaded images | `./uploads` |
+| MariaDB database | `./dbdata` (LinuxServer layout: files sit under `./dbdata/databases`) |
 
-**Production stack:**
-
-| Data | Where |
-|---|---|
-| Database | `./dbdata` (LinuxServer layout: files sit under `./dbdata/databases`) |
-| Everything else | `./data` |
-
-Uploaded images deserve a specific note. They are written under the
-static asset tree, which is part of the image, so without a volume every
-upload is lost on the next `docker compose pull && up -d`. Both stacks
-mount one. If you are upgrading an existing deployment that predates
-this, copy the files out of the running container before recreating it:
+Uploaded images deserve a specific note. They are written under the static
+asset tree, which is part of the image, so without a mount every upload is
+lost on the next `docker compose pull && up -d`. If you are upgrading a
+deployment that predates this, copy the files out of the running container
+before recreating it:
 
 ```sh
 docker cp writefreely-web:/go/static/uploads ./uploads-backup
@@ -132,40 +188,53 @@ docker cp writefreely-web:/go/static/uploads ./uploads-backup
 
 ## Environment variables
 
+Read from `.env` by both compose files:
+
 | Variable | Default | Meaning |
 |---|---|---|
-| `WRITEFREELY_DOCKER` | set in both images | Tells `--config` it is running in a container: bind `0.0.0.0`, use container asset paths |
-| `WRITEFREELY_DOCKER_PARENT_DIR` | per image | Asset root the configurator writes into the config |
+| `MYSQL_PASSWORD` | none, required | Password for the `writefreely` database user. Also goes in `config.ini` |
+| `MYSQL_ROOT_PASSWORD` | none, required | MariaDB root password, for administration only |
+| `PUID` / `PGID` | `1000` | User and group both containers run as, and the ownership MariaDB writes with |
+| `TZ` | `Etc/UTC` | Container timezone |
+| `WRITEFREELY_IMAGE` | ghcr.io `:latest` | Production stack only: the published image to run |
+| `WRITEFREELY_VERSION` | empty | Development stack only: version string compiled into the binary |
+
+Neither stack starts without the two passwords. That is deliberate, so
+that no deployment inherits a password published in this repository.
+
+Read by the image itself:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WRITEFREELY_DOCKER` | set in the image | Tells `--config` it is running in a container: bind `0.0.0.0`, use container asset paths |
+| `WRITEFREELY_DOCKER_PARENT_DIR` | `/usr/share/writefreely` | Asset root the configurator writes into the config |
 | `WRITEFREELY_AUTO_MIGRATE` | `true` | Apply pending migrations on start |
 | `WRITEFREELY_INIT_DB` | `auto` | Create the schema on start. `auto` initializes when the keys also had to be generated, i.e. on a first run. `true` forces it, `false` disables it |
 | `WRITEFREELY_CONFIG` | `config.ini` | Config file the entrypoint looks for |
 | `WRITEFREELY_KEYS_DIR` | `keys` | Directory the entrypoint checks for keys |
 
-`MYSQL_PASSWORD` and `MYSQL_ROOT_PASSWORD` come from `.env` and are read
-by the database container. Neither compose stack starts without them —
-deliberately, so that no deployment inherits a password published in this
-repository.
-
 ## Stamping a version into the image
 
-Both Dockerfiles accept a build argument:
+The build accepts an argument:
 
 ```sh
-docker build --build-arg WRITEFREELY_VERSION=0.18.0 -t writefreely:0.18.0 .
+docker build --target runtime --build-arg WRITEFREELY_VERSION=0.18.0 \
+    -t writefreely:0.18.0 .
 ```
 
-Without it the build falls back to `git describe`, and then to the
-version compiled into `app.go`. The argument matters when the build
-context has no usable git repository -- building from a git worktree, for
-instance, where `.git` is a file pointing outside the context. Earlier
-builds injected the empty result and produced binaries whose footer read
-a bare "v".
+Without it the build falls back to `git describe`, and then to the version
+compiled into `app.go`. The argument matters when the build context has no
+usable git repository: building from a git worktree, for instance, where
+`.git` is a file pointing outside the context, or from a shallow CI
+checkout that carries no tags. Earlier builds injected the empty result
+and produced binaries whose footer read a bare "v". CI now resolves the
+version in a step of its own and passes it in.
 
 ## Upgrading
 
 ```sh
-docker compose pull
-docker compose up -d
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 The entrypoint applies pending migrations on start, so an upgrade that
@@ -173,24 +242,20 @@ includes a schema change needs no separate step. **Back the database up
 first.** Migrations are not reversible, and downgrading the image after
 one has run will not work.
 
-To upgrade without automatic migrations, set `WRITEFREELY_AUTO_MIGRATE`
-to `false` and run `writefreely --migrate` yourself when ready.
+To upgrade without automatic migrations, set `WRITEFREELY_AUTO_MIGRATE` to
+`false` and run `writefreely --migrate` yourself when ready.
 
 ## Troubleshooting
 
-**The web container exits immediately on a fresh install.** It has no
+**The app container exits immediately on a fresh install.** It has no
 `config.ini`. The log says so and prints the command to create one.
 
-**"no such file or directory" mentioning config.ini, but the file
-exists.** Docker created a directory rather than using your file. Remove
-it, `touch config.ini`, recreate the container.
-
 **The app cannot reach the database.** The database host is the *service*
-name — `writefreely-db` in the development stack, `db` in production —
-not `localhost`. A container's `localhost` is itself.
+name, `db`, not `localhost`. A container's `localhost` is itself.
 
-**Permission denied writing to /data.** The production image runs as uid
-1000 and your `./data` is owned by someone else. `sudo chown -R 1000:1000 data`.
+**Permission denied writing to /data.** The containers run as `PUID`:`PGID`
+and your `./data` is owned by someone else. Set both to your own ids in
+`.env` and recreate the containers. See "File ownership" above.
 
 **The site loads but has no styling, and `/css/.css` 404s in the browser
 console.** The config has no `theme` key. Builds from this edition fall
@@ -202,8 +267,12 @@ happens with a hand-written config.
 The healthcheck accepts any HTTP response as proof of life, so it should
 not false-negative on a password-protected or unconfigured instance.
 
-**Uploaded images disappeared after an upgrade.** The uploads volume was
+**Uploaded images disappeared after an upgrade.** The uploads mount was
 missing. See the note above.
+
+**Password resets and invites never arrive.** No `[email]` section, or an
+incomplete one. WriteFreely needs `smtp_host`, `smtp_port`,
+`smtp_username` and `smtp_password` together, or the two Mailgun keys.
 
 **`migrate: no such table: appcontent`, or `Table 'writefreely.appcontent'
 doesn't exist`.** Migrations ran against a database with no schema, which
@@ -219,9 +288,9 @@ when the file is written by hand.
 
 ## Running on SQLite instead of MariaDB
 
-Neither compose stack uses SQLite, but the images support it and it is a
+Neither compose stack uses SQLite, but the image supports it and it is a
 reasonable choice for a small single-user instance. Drop the database
-service and point the config at a file on a volume:
+service and point the config at a file in the state directory:
 
 ```ini
 [database]
@@ -229,6 +298,5 @@ type     = sqlite3
 filename = /data/writefreely.db
 ```
 
-Make sure the containing directory is on a volume, or the database is
-destroyed with the container. The binary is built with the `sqlite` build
-tag, so no extra image is needed.
+`./data` is a bind mount, so the file survives the container. The binary
+is built with the `sqlite` build tag, so no extra image is needed.
