@@ -114,8 +114,6 @@ var WFImageUpload = (function () {
 			}
 			if (xhr.status === 204) {
 				handlers.onSuccess();
-			} else if (xhr.status === 409) {
-				handlers.onError('Another post still uses this image, so it was kept.');
 			} else {
 				handlers.onError(errorMessage(xhr));
 			}

@@ -143,6 +143,18 @@ func (db *datastore) AttachImagesToPost(ownerID int64, postID string, imageIDs [
 	return nil
 }
 
+// DetachImageFromPost releases an image from the post it was attached to. The
+// row stays behind so a shared image keeps working for the posts that still
+// use it, and so the orphan sweep can collect it if none do.
+func (db *datastore) DetachImageFromPost(imgID string) error {
+	_, err := db.Exec("UPDATE post_images SET post_id = NULL WHERE id = ?", imgID)
+	if err != nil {
+		log.Error("Failed detaching post image: %v", err)
+		return impart.HTTPError{http.StatusInternalServerError, "Couldn't detach the image."}
+	}
+	return nil
+}
+
 // DeletePostImage removes the given image's row. The file itself is removed
 // separately, and only once nothing references it.
 func (db *datastore) DeletePostImage(imgID string) error {

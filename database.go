@@ -140,6 +140,7 @@ type writestore interface {
 	GetPostImageBySum(ownerID int64, sum string) (*PostImage, error)
 	GetImagesForPost(postID string) (*[]PostImage, error)
 	AttachImagesToPost(ownerID int64, postID string, imageIDs []string) error
+	DetachImageFromPost(imgID string) error
 	DeletePostImage(imgID string) error
 	CountPostsReferencingImage(url, excludingPostID string) (int, error)
 	GetOrphanedImages(olderThanHours int) (*[]PostImage, error)

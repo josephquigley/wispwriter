@@ -470,7 +470,7 @@ func TestImageDeleteRemovesUnreferencedImage(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestImageDeleteRefusesReferencedImage(t *testing.T) {
+func TestImageDeleteKeepsReferencedImage(t *testing.T) {
 	app, _, u, _ := newImageTestApp(t)
 	coll, err := app.db.GetCollection("uploader")
 	assert.NoError(t, err)
@@ -483,11 +483,71 @@ func TestImageDeleteRefusesReferencedImage(t *testing.T) {
 	_, err = app.db.CreatePost(u.ID, coll.ID, &SubmittedPost{Title: &title, Content: &body})
 	assert.NoError(t, err)
 
+	// Removing it from the editor at hand must succeed, so the caller takes
+	// the link out of the post being written, while the post that still uses
+	// the image keeps working.
 	_, status := doDelete(t, app, u, imgID)
-	assert.Equal(t, http.StatusConflict, status)
+	assert.Equal(t, http.StatusNoContent, status)
 	assert.Equal(t, 1, countUploadedFiles(t, app), "a referenced file must survive")
 	_, err = app.db.GetPostImage(imgID)
 	assert.NoError(t, err)
+}
+
+func TestPostSaveDetachesImageDroppedFromBody(t *testing.T) {
+	app, _, u, _ := newImageTestApp(t)
+	coll, err := app.db.GetCollection("uploader")
+	assert.NoError(t, err)
+
+	rec, _ := doUpload(t, app, u, uploadRequest(t, "a.png", "image/png", tinyPNG(t)))
+	imgID, url := uploadedURL(t, rec)
+
+	title := "Uses the image"
+	body := "![a](" + url + ")"
+	p, err := app.db.CreatePost(u.ID, coll.ID, &SubmittedPost{Title: &title, Content: &body})
+	assert.NoError(t, err)
+	attachPostImages(app, u.ID, p.ID, body)
+
+	imgs, err := app.db.GetImagesForPost(p.ID)
+	assert.NoError(t, err)
+	assert.Len(t, *imgs, 1)
+
+	// Saving the post without the link is what finally releases the image.
+	attachPostImages(app, u.ID, p.ID, "no images here")
+
+	imgs, err = app.db.GetImagesForPost(p.ID)
+	assert.NoError(t, err)
+	assert.Len(t, *imgs, 0)
+	_, err = app.db.GetPostImage(imgID)
+	assert.Error(t, err, "an image no post references is deleted outright")
+	assert.Equal(t, 0, countUploadedFiles(t, app))
+}
+
+func TestPostSaveKeepsImageAnotherPostUses(t *testing.T) {
+	app, _, u, _ := newImageTestApp(t)
+	coll, err := app.db.GetCollection("uploader")
+	assert.NoError(t, err)
+
+	rec, _ := doUpload(t, app, u, uploadRequest(t, "a.png", "image/png", tinyPNG(t)))
+	imgID, url := uploadedURL(t, rec)
+
+	title := "First"
+	body := "![a](" + url + ")"
+	p1, err := app.db.CreatePost(u.ID, coll.ID, &SubmittedPost{Title: &title, Content: &body})
+	assert.NoError(t, err)
+	attachPostImages(app, u.ID, p1.ID, body)
+
+	other := "Second"
+	_, err = app.db.CreatePost(u.ID, coll.ID, &SubmittedPost{Title: &other, Content: &body})
+	assert.NoError(t, err)
+
+	attachPostImages(app, u.ID, p1.ID, "dropped it")
+
+	imgs, err := app.db.GetImagesForPost(p1.ID)
+	assert.NoError(t, err)
+	assert.Len(t, *imgs, 0, "detached from the post that dropped it")
+	_, err = app.db.GetPostImage(imgID)
+	assert.NoError(t, err, "kept for the post that still uses it")
+	assert.Equal(t, 1, countUploadedFiles(t, app))
 }
 
 func TestImageDeleteRejectsAnotherUsersImage(t *testing.T) {

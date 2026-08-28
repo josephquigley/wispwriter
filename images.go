@@ -115,8 +115,10 @@ func handleUploadImage(app *App, u *User, w http.ResponseWriter, r *http.Request
 	return impart.WriteSuccess(w, uploadedImage{img.ID, img.URL(), img.Filename}, http.StatusOK)
 }
 
-// handleDeleteImage removes one of the current user's images, along with its
-// file, as long as no post still references it.
+// handleDeleteImage takes one of the current user's images out of the editor
+// it was removed from. The file and row go with it only when no post still
+// references the image; otherwise they stay and the removal is local to the
+// post being edited.
 func handleDeleteImage(app *App, u *User, w http.ResponseWriter, r *http.Request) error {
 	if !app.cfg.Uploads.Enabled {
 		return impart.HTTPError{http.StatusNotFound, "Not found."}
@@ -132,12 +134,16 @@ func handleDeleteImage(app *App, u *User, w http.ResponseWriter, r *http.Request
 		return impart.HTTPError{http.StatusNotFound, "Image doesn't exist."}
 	}
 
+	// A post other than the one being edited may use this image too. Taking
+	// it out of this post is still what was asked for, so report success and
+	// leave the file and row for the posts that still reference them.
 	refs, err := app.db.CountPostsReferencingImage(img.URL(), "")
 	if err != nil {
 		return err
 	}
 	if refs > 0 {
-		return impart.HTTPError{http.StatusConflict, "Another post still uses this image."}
+		w.WriteHeader(http.StatusNoContent)
+		return nil
 	}
 
 	// Delete the row first: an orphaned file is recoverable, but a row
@@ -194,14 +200,10 @@ func attachPostImages(app *App, ownerID int64, postID, content string) {
 		return
 	}
 
-	matches := imageURLPattern.FindAllStringSubmatch(content, -1)
-	if len(matches) == 0 {
-		return
-	}
-
 	seen := map[string]bool{}
 	imageIDs := []string{}
-	for _, m := range matches {
+	referenced := map[string]bool{}
+	for _, m := range imageURLPattern.FindAllStringSubmatch(content, -1) {
 		sum := m[1]
 		if seen[sum] {
 			continue
@@ -214,10 +216,37 @@ func attachPostImages(app *App, ownerID int64, postID, content string) {
 			continue
 		}
 		imageIDs = append(imageIDs, img.ID)
+		referenced[img.ID] = true
 	}
+
+	// Run even when the body has no images left, since emptying a post of
+	// them is exactly when its last attachment needs releasing.
+	detachUnusedPostImages(app, postID, referenced)
 
 	if err := app.db.AttachImagesToPost(ownerID, postID, imageIDs); err != nil {
 		log.Error("Unable to attach images to post %s: %v", postID, err)
+	}
+}
+
+// detachUnusedPostImages releases the images a post is attached to but no
+// longer references in its body, so that taking an image out of a post is as
+// complete when the link is edited away by hand as when the thumbnail's
+// delete control is used. An image no post references at all goes entirely.
+func detachUnusedPostImages(app *App, postID string, referenced map[string]bool) {
+	imgs, err := app.db.GetImagesForPost(postID)
+	if err != nil {
+		log.Error("Unable to get images for post %s: %v", postID, err)
+		return
+	}
+
+	for _, img := range *imgs {
+		if referenced[img.ID] {
+			continue
+		}
+		if err := app.db.DetachImageFromPost(img.ID); err != nil {
+			continue
+		}
+		removeImageIfUnreferenced(app, &img, postID)
 	}
 }
 
