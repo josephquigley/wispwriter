@@ -1,32 +1,47 @@
-# Production stack, building the image from this checkout.
+# Production stack. Pulls the published image rather than compiling on the
+# server.
 #
 # Before the first run:
 #   cp .env.example .env       and edit the passwords
-#   mkdir -p data dbdata && sudo chown -R 1000:1000 data
-#   docker compose -f docker-compose.prod.yml up -d --build
+#   mkdir -p data uploads dbdata
+#   docker compose -f docker-compose.prod.yml up -d
 #   docker compose -f docker-compose.prod.yml run --rm app writefreely --config
 #   docker compose -f docker-compose.prod.yml up -d
 #   docker compose -f docker-compose.prod.yml exec app \
 #       writefreely --create-admin youruser:yourpassword
 #
+# Mail needs a real provider. Configure SMTP or Mailgun under [email] in
+# config.ini; see docs/docker.md.
+#
 # See docs/docker.md for the full walkthrough.
+
+name: writefreely
+
+networks:
+  external:
+  internal:
+    internal: true
 
 services:
   app:
-    # Built locally rather than pulled: this stack uses Dockerfile.prod,
-    # which is not the image published to a registry.
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
-    image: writefreely:local
-    container_name: writefreely
+    # Override WRITEFREELY_IMAGE in .env to pin a release tag instead of
+    # tracking latest.
+    image: ${WRITEFREELY_IMAGE:-ghcr.io/josephquigley/writefreely-colophon-edition:latest}
+
+    # Run as the host user, so a bind-mounted ./data needs no chown. The
+    # image defaults to uid 1000; override in .env when yours differs.
+    user: "${PUID:-1000}:${PGID:-1000}"
 
     volumes:
       - ./data:/data
       - ./uploads:/usr/share/writefreely/static/uploads
 
+    networks:
+      - internal
+      - external
+
     ports:
-      - 127.0.0.1:8080:8080
+      - "127.0.0.1:8080:8080"
 
     depends_on:
       db:
@@ -35,26 +50,27 @@ services:
     restart: unless-stopped
 
   db:
-    # LinuxServer's image, as this stack has always used. Its PUID/PGID
-    # handling is why: every piece of state here is a bind mount into this
-    # directory, and this image adopts the ownership you ask for instead of
-    # requiring the host directory be pre-chowned. Its data lives under
-    # /config/databases, hence /config as the mount point.
+    # LinuxServer's image. Its PUID/PGID handling is why: every piece of
+    # state here is a bind mount, and this image adopts the ownership you
+    # ask for instead of requiring the host directory be pre-chowned. Its
+    # data lives under /config/databases, hence /config as the mount point.
     #
     # Pinned to the 11.4 LTS series rather than tracking latest, so a major
     # MariaDB upgrade is a deliberate act.
     image: lscr.io/linuxserver/mariadb:11.4.5
-    container_name: writefreely-mariadb
 
     # Deliberately NOT ./db: this repository already contains a Go package
     # at db/, and mounting over it writes MariaDB's state into the source
-    # tree -- which is what the original file did.
+    # tree.
     volumes:
       - ./dbdata:/config
 
+    networks:
+      - internal
+
     environment:
-      - PUID=${PUID:-65534}
-      - PGID=${PGID:-65534}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - TZ=${TZ:-Etc/UTC}
       - MYSQL_DATABASE=writefreely
       - MYSQL_USER=writefreely
