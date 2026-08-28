@@ -24,6 +24,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/gosimple/slug"
 )
 
 const (
@@ -157,12 +160,46 @@ func sha256Hex(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// imageDirFormat groups uploads by the day they arrived, which keeps any one
+// directory small without the path having to encode anything.
+const imageDirFormat = "2006/01/02"
+
+// imageSlugMaxLen bounds the name part of a stored path, so a long filename
+// cannot push the whole path past what the column and the filesystem hold.
+const imageSlugMaxLen = 60
+
+// imagePathAttempts bounds how many names are tried before an upload gives up
+// on finding a free one for its day.
+const imagePathAttempts = 50
+
 // imagePath returns the storage path for an image, relative to the uploads
-// root. Every part of it is server-derived -- the owner's ID and the hash of
-// the stored bytes -- so a client-supplied filename can never influence where
-// the file lands.
-func imagePath(ownerID int64, sum, ext string) string {
-	return strconv.FormatInt(ownerID, 10) + "/" + sum[:2] + "/" + sum + "." + ext
+// root: the day it arrived, then the name the writer gave it.
+//
+// The directory and the extension are server-derived. The name is not, so it
+// is reduced to a slug, which leaves lowercase ASCII words and hyphens and
+// nothing that could climb out of the directory it lands in. n disambiguates
+// a name already taken that day.
+func imagePath(filename, ext string, at time.Time, n int) string {
+	base := imageSlug(filename)
+	if n > 1 {
+		base += "-" + strconv.Itoa(n)
+	}
+	return at.UTC().Format(imageDirFormat) + "/" + base + "." + ext
+}
+
+// imageSlug reduces a client-supplied filename to the name part of a stored
+// path, using the slugifier post URLs already go through.
+func imageSlug(filename string) string {
+	name := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+	s := slug.Make(name)
+	if len(s) > imageSlugMaxLen {
+		s = strings.Trim(s[:imageSlugMaxLen], "-")
+	}
+	if s == "" {
+		// Nothing usable survived, or there was no name to begin with.
+		return "image"
+	}
+	return s
 }
 
 // uploadsRoot returns the directory uploaded images are written to.

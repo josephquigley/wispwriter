@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -32,6 +33,17 @@ func tinyPNG(t *testing.T) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	img.Set(0, 0, color.RGBA{255, 0, 0, 255})
+	var buf bytes.Buffer
+	assert.NoError(t, png.Encode(&buf, img))
+	return buf.Bytes()
+}
+
+// otherTinyPNG returns a valid 2x2 PNG whose bytes differ from tinyPNG's, for
+// the cases that need two distinct images rather than two copies of one.
+func otherTinyPNG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.RGBA{0, 0, 255, 255})
 	var buf bytes.Buffer
 	assert.NoError(t, png.Encode(&buf, img))
 	return buf.Bytes()
@@ -172,11 +184,44 @@ func TestReencodeStripsMetadata(t *testing.T) {
 	assert.False(t, bytes.Contains(out, []byte("SECRETGPS")))
 }
 
-func TestImagePathIsServerDerived(t *testing.T) {
-	sum := sha256Hex([]byte("hello"))
-	p := imagePath(42, sum, "png")
-	assert.Equal(t, "42/"+sum[:2]+"/"+sum+".png", p)
-	assert.False(t, strings.Contains(p, ".."), "no traversal is structurally possible")
+func TestImagePathNamesTheDayAndTheFile(t *testing.T) {
+	at := time.Date(2026, 3, 9, 15, 4, 5, 0, time.UTC)
+	assert.Equal(t, "2026/03/09/holiday-snap.png", imagePath("Holiday Snap.PNG", "png", at, 1))
+	assert.Equal(t, "2026/03/09/holiday-snap-2.png", imagePath("Holiday Snap.PNG", "png", at, 2),
+		"a name already used that day is disambiguated rather than overwritten")
+}
+
+func TestImagePathIsAlwaysUnderItsDirectory(t *testing.T) {
+	at := time.Date(2026, 3, 9, 15, 4, 5, 0, time.UTC)
+	for _, name := range []string{
+		"../../etc/passwd.png",
+		"..\\..\\windows\\system32.png",
+		"/absolute/path.png",
+		"....//....//escape.png",
+		"nul.png",
+	} {
+		p := imagePath(name, "png", at, 1)
+		assert.True(t, strings.HasPrefix(p, "2026/03/09/"), name)
+		assert.Equal(t, 3, strings.Count(p, "/"), "the name cannot add directories: "+p)
+		assert.False(t, strings.Contains(p, ".."), name)
+	}
+}
+
+func TestImageSlugFallsBackWhenNothingSurvives(t *testing.T) {
+	assert.Equal(t, "image", imageSlug(".png"), "a file with no name still needs one")
+	assert.Equal(t, "image", imageSlug("???.png"))
+	assert.Equal(t, "image", imageSlug(""))
+}
+
+func TestImageSlugIsBounded(t *testing.T) {
+	s := imageSlug(strings.Repeat("long-name-", 40) + ".png")
+	assert.LessOrEqual(t, len(s), imageSlugMaxLen)
+	assert.False(t, strings.HasSuffix(s, "-"), "a truncated slug must not end mid-separator")
+}
+
+func TestImageSlugTransliterates(t *testing.T) {
+	assert.Equal(t, "uber-cafe.png", imagePath("Über Café.png", "png",
+		time.Date(2026, 3, 9, 0, 0, 0, 0, time.UTC), 1)[len("2026/03/09/"):])
 }
 
 func TestSha256Hex(t *testing.T) {

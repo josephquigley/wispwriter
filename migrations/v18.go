@@ -22,12 +22,15 @@ func supportPostImages(db *datastore) error {
     owner_id ` + db.typeInt() + ` not null,
     post_id  ` + db.typeChar(16) + ` null,
     sha256   ` + db.typeChar(64) + ` not null,
+    path     ` + db.typeVarChar(255) + ` not null,
     filename ` + db.typeVarChar(255) + ` not null,
     mime     ` + db.typeVarChar(64) + ` not null,
     size     ` + db.typeInt() + ` not null,
     created  ` + db.typeDateTime() + ` not null,
     constraint pi_owner_sum
         unique (owner_id, sha256),
+    constraint pi_path
+        unique (path),
     PRIMARY KEY (id)
 )`)
 	if err != nil {

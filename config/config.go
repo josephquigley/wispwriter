@@ -206,11 +206,14 @@ type (
 	// A packaged install wants them somewhere writable and separate from
 	// the read-only assets, such as /var/lib/writefreely/uploads.
 	//
+	// Files are stored under the day they were uploaded and named after
+	// the file the writer sent, reduced to a slug: 2026/03/09/holiday.png.
+	// A name already used that day gains a suffix rather than overwriting
+	// what is there.
+	//
 	// Which image types are accepted is not configurable: it is fixed by
-	// the decoders compiled in, in decodeAndReencode. SVG is excluded
-	// because it can carry script and would be a stored-XSS primitive
-	// served from the instance's own origin, and WebP because decoding it
-	// would require a dependency.
+	// the decoders compiled in, in decodeAndReencode. WebP is excluded
+	// because decoding it would require a dependency.
 	UploadsCfg struct {
 		Enabled   bool   `ini:"enabled"`
 		MaxSizeMB int    `ini:"max_size_mb"`

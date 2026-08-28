@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/writeas/impart"
@@ -92,24 +93,27 @@ func handleUploadImage(app *App, u *User, w http.ResponseWriter, r *http.Request
 	// Identify the image by what we actually store, not by what was sent.
 	sum := sha256Hex(stored)
 
+	// The same bytes from the same user are the image already stored, so
+	// the upload resolves to it rather than to a second copy under today's
+	// date.
 	if existing, err := app.db.GetPostImageBySum(u.ID, sum); err == nil {
 		return impart.WriteSuccess(w, uploadedImage{existing.ID, existing.URL(), existing.Filename}, http.StatusOK)
 	}
 
-	relPath := imagePath(u.ID, sum, ext)
-	if err = app.writeUploadedImage(relPath, stored); err != nil {
-		log.Error("Failed writing uploaded image: %v", err)
-		return impart.HTTPError{http.StatusInsufficientStorage, "Couldn't store that image."}
+	// The row is written first, because its path is what reserves the name:
+	// the unique constraint settles which of two uploads racing for the same
+	// name that day gets it, and the loser tries the next one.
+	img, err := app.createImageRow(u.ID, sum, header.Filename, mime, ext, len(stored))
+	if err != nil {
+		return err
 	}
 
-	// The client's filename is kept for display only; it never influences
-	// where the file lands.
-	img, err := app.db.CreatePostImage(u.ID, sum, header.Filename, mime, len(stored))
-	if err != nil {
-		if rmErr := app.removeUploadedImage(relPath); rmErr != nil {
-			log.Error("Failed removing image after a failed insert: %v", rmErr)
+	if err = app.writeUploadedImage(img.RelPath(), stored); err != nil {
+		log.Error("Failed writing uploaded image: %v", err)
+		if rmErr := app.db.DeletePostImage(img.ID); rmErr != nil {
+			log.Error("Failed removing image row after a failed write: %v", rmErr)
 		}
-		return err
+		return impart.HTTPError{http.StatusInsufficientStorage, "Couldn't store that image."}
 	}
 
 	return impart.WriteSuccess(w, uploadedImage{img.ID, img.URL(), img.Filename}, http.StatusOK)
@@ -159,6 +163,23 @@ func handleDeleteImage(app *App, u *User, w http.ResponseWriter, r *http.Request
 	return nil
 }
 
+// createImageRow records an upload under the first free name for today,
+// which is where its file then goes.
+func (app *App) createImageRow(ownerID int64, sum, filename, mime, ext string, size int) (*PostImage, error) {
+	now := time.Now()
+	for n := 1; n <= imagePathAttempts; n++ {
+		img, err := app.db.CreatePostImage(ownerID, sum, imagePath(filename, ext, now, n), filename, mime, size)
+		if err == nil {
+			return img, nil
+		}
+		if err != ErrImagePathTaken {
+			return nil, err
+		}
+	}
+	log.Error("Gave up finding a free path for an upload named %s", filename)
+	return nil, impart.HTTPError{http.StatusInternalServerError, "Couldn't store that image."}
+}
+
 // uploadHeaders hardens the responses served for uploaded files. This is
 // defense in depth behind the type allow-list, not a substitute for it.
 // uploadHeaders serves uploaded files with the headers that make hosting
@@ -188,8 +209,10 @@ func uploadHeaders(next http.Handler) http.Handler {
 }
 
 // imageURLPattern matches the URLs of images this instance hosts, so a post's
-// body can be scanned for the ones it uses.
-var imageURLPattern = regexp.MustCompile(`/` + uploadsDir + `/[0-9]+/[0-9a-f]{2}/([0-9a-f]{64})\.[a-z]+`)
+// body can be scanned for the ones it uses. It captures the stored path,
+// which is what identifies the image now that the URL no longer carries its
+// hash.
+var imageURLPattern = regexp.MustCompile(`/` + uploadsDir + `/([0-9]{4}/[0-9]{2}/[0-9]{2}/[a-z0-9-]+\.[a-z0-9]+)`)
 
 // attachPostImages records which of the user's uploaded images the given post
 // body uses, so the images stop being orphans and can be cleaned up with the
@@ -204,13 +227,13 @@ func attachPostImages(app *App, ownerID int64, postID, content string) {
 	imageIDs := []string{}
 	referenced := map[string]bool{}
 	for _, m := range imageURLPattern.FindAllStringSubmatch(content, -1) {
-		sum := m[1]
-		if seen[sum] {
+		path := m[1]
+		if seen[path] {
 			continue
 		}
-		seen[sum] = true
+		seen[path] = true
 
-		img, err := app.db.GetPostImageBySum(ownerID, sum)
+		img, err := app.db.GetPostImageByPath(ownerID, path)
 		if err != nil {
 			// Someone else's image, or one that's already gone.
 			continue

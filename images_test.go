@@ -20,7 +20,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -54,11 +53,11 @@ func TestPostImageCreateAndGet(t *testing.T) {
 	u, _, _ := createTemplateTestUser(t, app, "imgowner")
 
 	sum := testSum("one")
-	img, err := app.db.CreatePostImage(u.ID, sum, "holiday.png", "image/png", 1234)
+	img, err := app.db.CreatePostImage(u.ID, sum, "2026/08/27/holiday.png", "holiday.png", "image/png", 1234)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, img.ID)
 	assert.Equal(t, sum, img.Sum)
-	assert.Equal(t, "/uploads/"+strconv.FormatInt(u.ID, 10)+"/"+sum[:2]+"/"+sum+".png", img.URL())
+	assert.Equal(t, "/uploads/2026/08/27/holiday.png", img.URL())
 
 	got, err := app.db.GetPostImage(img.ID)
 	assert.NoError(t, err)
@@ -75,7 +74,7 @@ func TestPostImageGetBySum(t *testing.T) {
 	u, _, _ := createTemplateTestUser(t, app, "imgowner")
 
 	sum := testSum("two")
-	img, err := app.db.CreatePostImage(u.ID, sum, "a.png", "image/png", 1)
+	img, err := app.db.CreatePostImage(u.ID, sum, "2026/08/27/a.png", "a.png", "image/png", 1)
 	assert.NoError(t, err)
 
 	got, err := app.db.GetPostImageBySum(u.ID, sum)
@@ -91,9 +90,9 @@ func TestPostImageDuplicateReturnsExisting(t *testing.T) {
 	u, _, _ := createTemplateTestUser(t, app, "imgowner")
 
 	sum := testSum("three")
-	first, err := app.db.CreatePostImage(u.ID, sum, "a.png", "image/png", 1)
+	first, err := app.db.CreatePostImage(u.ID, sum, "2026/08/27/a.png", "a.png", "image/png", 1)
 	assert.NoError(t, err)
-	second, err := app.db.CreatePostImage(u.ID, sum, "b.png", "image/png", 1)
+	second, err := app.db.CreatePostImage(u.ID, sum, "2026/08/27/b.png", "b.png", "image/png", 1)
 	assert.NoError(t, err, "re-uploading identical bytes is a success, not a conflict")
 	assert.Equal(t, first.ID, second.ID)
 
@@ -106,7 +105,7 @@ func TestPostImageAttachAndList(t *testing.T) {
 	app, _ := newTemplateTestApp(t, nil)
 	u, _, post := createTemplateTestUser(t, app, "imgowner")
 
-	img, err := app.db.CreatePostImage(u.ID, testSum("four"), "a.png", "image/png", 1)
+	img, err := app.db.CreatePostImage(u.ID, testSum("four"), "2026/08/27/a.png", "a.png", "image/png", 1)
 	assert.NoError(t, err)
 
 	assert.NoError(t, app.db.AttachImagesToPost(u.ID, post.ID, []string{img.ID}))
@@ -121,7 +120,7 @@ func TestPostImageDelete(t *testing.T) {
 	app, _ := newTemplateTestApp(t, nil)
 	u, _, _ := createTemplateTestUser(t, app, "imgowner")
 
-	img, err := app.db.CreatePostImage(u.ID, testSum("five"), "a.png", "image/png", 1)
+	img, err := app.db.CreatePostImage(u.ID, testSum("five"), "2026/08/27/a.png", "a.png", "image/png", 1)
 	assert.NoError(t, err)
 
 	assert.NoError(t, app.db.DeletePostImage(img.ID))
@@ -133,7 +132,7 @@ func TestPostImageCountPostsReferencingImage(t *testing.T) {
 	app, _ := newTemplateTestApp(t, nil)
 	u, coll, _ := createTemplateTestUser(t, app, "imgowner")
 
-	img, err := app.db.CreatePostImage(u.ID, testSum("six"), "a.png", "image/png", 1)
+	img, err := app.db.CreatePostImage(u.ID, testSum("six"), "2026/08/27/a.png", "a.png", "image/png", 1)
 	assert.NoError(t, err)
 
 	n, err := app.db.CountPostsReferencingImage(img.URL(), "")
@@ -170,11 +169,11 @@ func TestPostImageGetOrphanedImages(t *testing.T) {
 	app, _ := newTemplateTestApp(t, nil)
 	u, _, post := createTemplateTestUser(t, app, "imgowner")
 
-	old, err := app.db.CreatePostImage(u.ID, testSum("old"), "old.png", "image/png", 1)
+	old, err := app.db.CreatePostImage(u.ID, testSum("old"), "2026/08/27/old.png", "old.png", "image/png", 1)
 	assert.NoError(t, err)
-	recent, err := app.db.CreatePostImage(u.ID, testSum("recent"), "new.png", "image/png", 1)
+	recent, err := app.db.CreatePostImage(u.ID, testSum("recent"), "2026/08/27/new.png", "new.png", "image/png", 1)
 	assert.NoError(t, err)
-	attached, err := app.db.CreatePostImage(u.ID, testSum("attached"), "att.png", "image/png", 1)
+	attached, err := app.db.CreatePostImage(u.ID, testSum("attached"), "2026/08/27/att.png", "att.png", "image/png", 1)
 	assert.NoError(t, err)
 	assert.NoError(t, app.db.AttachImagesToPost(u.ID, post.ID, []string{attached.ID}))
 
@@ -322,6 +321,41 @@ func uploadedURL(t *testing.T, rec *httptest.ResponseRecorder) (id, url string) 
 	return res.Data.ID, res.Data.URL
 }
 
+func TestImageUploadDisambiguatesRepeatedName(t *testing.T) {
+	app, _, u, _ := newImageTestApp(t)
+
+	// Same name, different bytes, so this is a genuine collision rather
+	// than the duplicate-upload case.
+	rec, status := doUpload(t, app, u, uploadRequest(t, "shot.png", "image/png", tinyPNG(t)))
+	assert.Equal(t, http.StatusOK, status)
+	_, first := uploadedURL(t, rec)
+
+	rec, status = doUpload(t, app, u, uploadRequest(t, "shot.png", "image/png", otherTinyPNG(t)))
+	assert.Equal(t, http.StatusOK, status)
+	_, second := uploadedURL(t, rec)
+
+	assert.Regexp(t, `/shot\.png$`, first)
+	assert.Regexp(t, `/shot-2\.png$`, second, "the second must not overwrite the first")
+	assert.Equal(t, 2, countUploadedFiles(t, app))
+}
+
+func TestImageUploadReusesFileForIdenticalBytes(t *testing.T) {
+	app, _, u, _ := newImageTestApp(t)
+
+	rec, _ := doUpload(t, app, u, uploadRequest(t, "one.png", "image/png", tinyPNG(t)))
+	firstID, first := uploadedURL(t, rec)
+
+	// The same bytes under a different name are the image already stored,
+	// so no second file appears and the original URL is handed back.
+	rec, status := doUpload(t, app, u, uploadRequest(t, "two.png", "image/png", tinyPNG(t)))
+	assert.Equal(t, http.StatusOK, status)
+	secondID, second := uploadedURL(t, rec)
+
+	assert.Equal(t, firstID, secondID)
+	assert.Equal(t, first, second)
+	assert.Equal(t, 1, countUploadedFiles(t, app))
+}
+
 func TestImageUploadStoresReencodedFile(t *testing.T) {
 	app, _, u, _ := newImageTestApp(t)
 
@@ -330,9 +364,11 @@ func TestImageUploadStoresReencodedFile(t *testing.T) {
 
 	imgID, url := uploadedURL(t, rec)
 	assert.NotEmpty(t, imgID)
-	assert.True(t, strings.HasPrefix(url, "/uploads/"+strconv.FormatInt(u.ID, 10)+"/"), "path is derived from the owner, not the filename")
-	assert.NotContains(t, url, "..", "the client filename never reaches the path")
-	assert.NotContains(t, url, "evil")
+	// The filename names the file, but only after being reduced to a slug:
+	// the directory is the upload's date and nothing the client sent can
+	// add to it.
+	assert.Regexp(t, `^/uploads/\d{4}/\d{2}/\d{2}/evil\.png$`, url)
+	assert.NotContains(t, url, "..", "no traversal survives into the path")
 	assert.Equal(t, 1, countUploadedFiles(t, app))
 
 	img, err := app.db.GetPostImage(imgID)

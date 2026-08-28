@@ -12,6 +12,7 @@ package writefreely
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ type PostImage struct {
 	OwnerID  int64
 	PostID   sql.NullString
 	Sum      string
+	Path     string
 	Filename string
 	Mime     string
 	Size     int
@@ -43,9 +45,11 @@ func (i *PostImage) Ext() string {
 	return extForMIME(i.Mime)
 }
 
-// RelPath returns the image's path relative to the uploads directory.
+// RelPath returns the image's path relative to the uploads directory. It is
+// stored rather than derived, since a path naming the day and the file cannot
+// be recomputed from the image's contents the way a hashed one could.
 func (i *PostImage) RelPath() string {
-	return imagePath(i.OwnerID, i.Sum, i.Ext())
+	return i.Path
 }
 
 // URL returns the public path at which the image is served.
@@ -53,21 +57,32 @@ func (i *PostImage) URL() string {
 	return "/" + uploadsDir + "/" + i.RelPath()
 }
 
+// ErrImagePathTaken reports that an upload's chosen storage path was claimed
+// by another upload first. It is not returned to the client: the handler
+// answers it by trying the next name.
+var ErrImagePathTaken = errors.New("image path already taken")
+
 // CreatePostImage records an uploaded image. Identical bytes uploaded again by
 // the same user return the existing row instead of creating a second one, so a
 // duplicate upload is a success rather than a conflict.
-func (db *datastore) CreatePostImage(ownerID int64, sum, filename, mime string, size int) (*PostImage, error) {
+func (db *datastore) CreatePostImage(ownerID int64, sum, path, filename, mime string, size int) (*PostImage, error) {
 	if existing, err := db.GetPostImageBySum(ownerID, sum); err == nil {
 		return existing, nil
 	}
 
 	imgID := id.GenerateRandomString(imageIDChars, 6)
-	_, err := db.Exec("INSERT INTO post_images (id, owner_id, post_id, sha256, filename, mime, size, created) VALUES (?, ?, NULL, ?, ?, ?, ?, "+db.now()+")",
-		imgID, ownerID, sum, filename, mime, size)
+	_, err := db.Exec("INSERT INTO post_images (id, owner_id, post_id, sha256, path, filename, mime, size, created) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, "+db.now()+")",
+		imgID, ownerID, sum, path, filename, mime, size)
 	if err != nil {
 		if db.isDuplicateKeyErr(err) {
-			// Another request stored the same bytes first.
-			return db.GetPostImageBySum(ownerID, sum)
+			// Two constraints can produce this: the same bytes, which is a
+			// duplicate upload and a success, or the same path, which means
+			// another upload claimed the name first and the caller should
+			// try the next one.
+			if existing, sumErr := db.GetPostImageBySum(ownerID, sum); sumErr == nil {
+				return existing, nil
+			}
+			return nil, ErrImagePathTaken
 		}
 		log.Error("Failed inserting into post_images: %v", err)
 		return nil, impart.HTTPError{http.StatusInternalServerError, "Couldn't save the uploaded image."}
@@ -86,10 +101,16 @@ func (db *datastore) GetPostImageBySum(ownerID int64, sum string) (*PostImage, e
 	return db.getPostImageBy("owner_id = ? AND sha256 = ?", ownerID, sum)
 }
 
+// GetPostImageByPath returns the given user's image stored at the given
+// uploads-relative path.
+func (db *datastore) GetPostImageByPath(ownerID int64, path string) (*PostImage, error) {
+	return db.getPostImageBy("owner_id = ? AND path = ?", ownerID, path)
+}
+
 func (db *datastore) getPostImageBy(where string, args ...interface{}) (*PostImage, error) {
 	var i PostImage
-	err := db.QueryRow("SELECT id, owner_id, post_id, sha256, filename, mime, size, created FROM post_images WHERE "+where, args...).
-		Scan(&i.ID, &i.OwnerID, &i.PostID, &i.Sum, &i.Filename, &i.Mime, &i.Size, &i.Created)
+	err := db.QueryRow("SELECT id, owner_id, post_id, sha256, path, filename, mime, size, created FROM post_images WHERE "+where, args...).
+		Scan(&i.ID, &i.OwnerID, &i.PostID, &i.Sum, &i.Path, &i.Filename, &i.Mime, &i.Size, &i.Created)
 	switch {
 	case err == sql.ErrNoRows:
 		return nil, impart.HTTPError{http.StatusNotFound, "Image doesn't exist."}
@@ -102,7 +123,7 @@ func (db *datastore) getPostImageBy(where string, args ...interface{}) (*PostIma
 
 // GetImagesForPost returns the images attached to the given post.
 func (db *datastore) GetImagesForPost(postID string) (*[]PostImage, error) {
-	rows, err := db.Query("SELECT id, owner_id, post_id, sha256, filename, mime, size, created FROM post_images WHERE post_id = ? ORDER BY created ASC", postID)
+	rows, err := db.Query("SELECT id, owner_id, post_id, sha256, path, filename, mime, size, created FROM post_images WHERE post_id = ? ORDER BY created ASC", postID)
 	if err != nil {
 		log.Error("Failed selecting post images: %v", err)
 		return nil, impart.HTTPError{http.StatusInternalServerError, "Couldn't retrieve the post's images."}
@@ -112,7 +133,7 @@ func (db *datastore) GetImagesForPost(postID string) (*[]PostImage, error) {
 	imgs := []PostImage{}
 	for rows.Next() {
 		var i PostImage
-		if err = rows.Scan(&i.ID, &i.OwnerID, &i.PostID, &i.Sum, &i.Filename, &i.Mime, &i.Size, &i.Created); err != nil {
+		if err = rows.Scan(&i.ID, &i.OwnerID, &i.PostID, &i.Sum, &i.Path, &i.Filename, &i.Mime, &i.Size, &i.Created); err != nil {
 			log.Error("Failed scanning post image: %v", err)
 			return nil, impart.HTTPError{http.StatusInternalServerError, "Couldn't retrieve the post's images."}
 		}
@@ -189,7 +210,7 @@ func (db *datastore) CountPostsReferencingImage(url, excludingPostID string) (in
 // number of hours ago and never attached to a post -- uploads from drafts that
 // were abandoned.
 func (db *datastore) GetOrphanedImages(olderThanHours int) (*[]PostImage, error) {
-	rows, err := db.Query("SELECT id, owner_id, post_id, sha256, filename, mime, size, created FROM post_images WHERE post_id IS NULL AND created < " + db.dateAdd(-olderThanHours, "HOUR"))
+	rows, err := db.Query("SELECT id, owner_id, post_id, sha256, path, filename, mime, size, created FROM post_images WHERE post_id IS NULL AND created < " + db.dateAdd(-olderThanHours, "HOUR"))
 	if err != nil {
 		log.Error("Failed selecting orphaned images: %v", err)
 		return nil, impart.HTTPError{http.StatusInternalServerError, "Couldn't retrieve orphaned images."}
@@ -199,7 +220,7 @@ func (db *datastore) GetOrphanedImages(olderThanHours int) (*[]PostImage, error)
 	imgs := []PostImage{}
 	for rows.Next() {
 		var i PostImage
-		if err = rows.Scan(&i.ID, &i.OwnerID, &i.PostID, &i.Sum, &i.Filename, &i.Mime, &i.Size, &i.Created); err != nil {
+		if err = rows.Scan(&i.ID, &i.OwnerID, &i.PostID, &i.Sum, &i.Path, &i.Filename, &i.Mime, &i.Size, &i.Created); err != nil {
 			log.Error("Failed scanning orphaned image: %v", err)
 			return nil, impart.HTTPError{http.StatusInternalServerError, "Couldn't retrieve orphaned images."}
 		}
