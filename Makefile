@@ -78,7 +78,7 @@ build-arm64: deps
 	xgo --targets=linux/arm64, -dest build/ $(LDFLAGS) -tags='netgo sqlite' -go go-1.25.x -out writefreely -pkg ./cmd/writefreely .
 
 build-docker :
-	$(DOCKERCMD) build --build-arg WRITEFREELY_VERSION=$(VERSTR) -t $(IMAGE_NAME):latest $(if $(VERSTR),-t $(IMAGE_NAME):$(VERSTR),) .
+	$(DOCKERCMD) build --target runtime --build-arg WRITEFREELY_VERSION=$(VERSTR) -t $(IMAGE_NAME):latest $(if $(VERSTR),-t $(IMAGE_NAME):$(VERSTR),) .
 
 test:
 	$(GOTEST) -v ./...
