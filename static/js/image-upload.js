@@ -21,6 +21,15 @@ var WFImageUpload = (function () {
 	// csrfToken is set by init() and sent with every request.
 	var csrfToken = '';
 
+	// COLLAPSED_KEY stores whether the strip is rolled up, so the choice
+	// survives moving between posts.
+	var COLLAPSED_KEY = 'padImageStrip';
+
+	// stripToggle is the control that rolls the strip up and down. It is
+	// built here rather than rendered with the page, since without this
+	// script there is nothing for it to do.
+	var stripToggle = null;
+
 	function randomID() {
 		return Math.random().toString(36).substring(2, 10);
 	}
@@ -146,6 +155,7 @@ var WFImageUpload = (function () {
 		if (!strip) {
 			return;
 		}
+		stripToggle = buildStripToggle(strip);
 		strip.addEventListener('click', function (e) {
 			var btn = e.target;
 			if (!btn || btn.className !== 'remove-image') {
@@ -188,9 +198,43 @@ var WFImageUpload = (function () {
 		if (!strip) {
 			return;
 		}
-		var has = strip.getElementsByClassName('uploaded-image').length > 0;
-		var cls = document.body.className.replace(/\s*has-images\b/, '');
-		document.body.className = has ? (cls + ' has-images').replace(/^\s+/, '') : cls;
+		var n = strip.getElementsByClassName('uploaded-image').length;
+		setBodyClass('has-images', n > 0);
+		setBodyClass('images-collapsed', n > 0 && isCollapsed());
+		if (stripToggle) {
+			var collapsed = isCollapsed();
+			stripToggle.innerHTML = (collapsed ? '&#9650;' : '&#9660;') + ' ' +
+				n + (n === 1 ? ' image' : ' images');
+			stripToggle.title = collapsed ? 'Show images' : 'Hide images';
+		}
+	}
+
+	// setBodyClass adds or removes one class without disturbing the others,
+	// which the theme toggle sets on the same element.
+	function setBodyClass(name, on) {
+		var cls = document.body.className.replace(new RegExp('\\s*' + name + '\\b'), '');
+		document.body.className = on ? (cls + ' ' + name).replace(/^\s+/, '') : cls;
+	}
+
+	function isCollapsed() {
+		return typeof H !== 'undefined' && H.get(COLLAPSED_KEY, 'open') === 'collapsed';
+	}
+
+	// buildStripToggle adds the control that rolls the strip up, giving the
+	// editor its full height back while leaving the images one click away.
+	function buildStripToggle(strip) {
+		var toggle = document.createElement('a');
+		toggle.href = '#';
+		toggle.id = 'image-strip-toggle';
+		toggle.addEventListener('click', function (e) {
+			e.preventDefault();
+			if (typeof H !== 'undefined') {
+				H.set(COLLAPSED_KEY, isCollapsed() ? 'open' : 'collapsed');
+			}
+			syncStripState(strip);
+		});
+		strip.appendChild(toggle);
+		return toggle;
 	}
 
 	// addThumbnail appends an image to the strip.

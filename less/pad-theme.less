@@ -230,6 +230,14 @@ body#pad, body#pad-sub {
 				color: @lightNavBG;
 			}
 		}
+		#image-strip-toggle {
+			border-left-color: @lightNavBorder;
+			color: @lightLinkColor;
+			&:hover {
+				background: @lightNavHoverBG;
+				color: @lightTextColor;
+			}
+		}
 	}
 
 	&.dark {
@@ -237,6 +245,14 @@ body#pad, body#pad-sub {
 			background: @darkNavBG;
 			border-top-color: @darkNavBorder;
 			.remove-image {
+				background: @darkNavHoverBG;
+				color: @darkTextColor;
+			}
+		}
+		#image-strip-toggle {
+			border-left-color: @darkNavBorder;
+			color: @darkLinkColor;
+			&:hover {
 				background: @darkNavHoverBG;
 				color: @darkTextColor;
 			}
