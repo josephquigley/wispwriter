@@ -164,7 +164,9 @@ var WFImageUpload = (function () {
 					if (handlers.onRemoved) {
 						handlers.onRemoved(url);
 					}
-					thumb.parentNode.removeChild(thumb);
+					var strip = thumb.parentNode;
+					strip.removeChild(thumb);
+					syncStripState(strip);
 				},
 				onError: handlers.onError
 			});
@@ -179,6 +181,18 @@ var WFImageUpload = (function () {
 		}
 		var pattern = new RegExp('!?\\[[^\\]]*\\]\\(' + escapeRegExp(url) + '\\)', 'g');
 		replaceInTextarea(textarea, pattern, '');
+	}
+
+	// syncStripState marks the document while the strip holds anything, so
+	// the stylesheet can shorten the editor by exactly the strip's height
+	// rather than letting the two overlap.
+	function syncStripState(strip) {
+		if (!strip) {
+			return;
+		}
+		var has = strip.getElementsByClassName('uploaded-image').length > 0;
+		var cls = document.body.className.replace(/\s*has-images\b/, '');
+		document.body.className = has ? (cls + ' has-images').replace(/^\s+/, '') : cls;
 	}
 
 	// addThumbnail appends an image to the strip.
@@ -204,6 +218,7 @@ var WFImageUpload = (function () {
 		thumb.appendChild(btn);
 
 		strip.appendChild(thumb);
+		syncStripState(strip);
 	}
 
 	// init wires drag-and-drop uploads into a textarea-based editor.
@@ -222,6 +237,11 @@ var WFImageUpload = (function () {
 			},
 			onError: onError
 		});
+
+		// A post being edited may already have images, rendered with the
+		// page, so the editor has to start shortened rather than only
+		// after the first upload.
+		syncStripState(strip);
 
 		if (!textarea) {
 			return;

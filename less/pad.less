@@ -541,3 +541,65 @@ body#pad .alert {
 		}
 	}
 }
+
+// The editor is fixed and fills the viewport, so anything after it in the
+// DOM would render underneath it at the top of the page. Pin the strip to
+// the bottom instead, and take its height out of the editor's, so the two
+// sit above and below each other rather than overlapping.
+@stripHeight: 5.5em;
+
+body#pad.has-images, body#pad-sub.has-images {
+	textarea, #title {
+		height: calc(~"100% - 3em - 1px - @{stripHeight}") !important;
+	}
+}
+
+#image-strip {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: @stripHeight;
+	box-sizing: border-box;
+	padding: 0.75em 1em;
+	background: #fafafa;
+	border-top: 1px solid #ddd;
+
+	// A horizontal filmstrip: many images scroll sideways rather than
+	// growing the bar and eating the editor.
+	white-space: nowrap;
+	overflow-x: auto;
+	overflow-y: hidden;
+
+	// No empty bar before anything has been uploaded.
+	&:empty {
+		display: none;
+	}
+
+	.uploaded-image {
+		position: relative;
+		display: inline-block;
+		margin: 0 0.5em 0 0;
+		vertical-align: top;
+	}
+	.uploaded-image img {
+		display: block;
+		height: 4em;
+		width: auto;
+		border-radius: 3px;
+	}
+	.remove-image {
+		position: absolute;
+		top: -0.5em;
+		right: -0.5em;
+		width: 1.4em;
+		height: 1.4em;
+		line-height: 1.4em;
+		text-align: center;
+		border-radius: 50%;
+		background: #444;
+		color: #fff;
+		font-size: 0.8em;
+		text-decoration: none;
+	}
+}
