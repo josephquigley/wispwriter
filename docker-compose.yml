@@ -8,6 +8,9 @@
 #   docker compose up -d
 #   docker compose exec app writefreely --create-admin youruser:yourpassword
 #
+# Mail is caught by Mailpit rather than delivered. Read it at
+# http://localhost:8025 and see docs/docker.md for the config.ini block.
+#
 # See docs/docker.md for the full walkthrough.
 
 name: writefreely-dev
@@ -51,6 +54,8 @@ services:
         # only waits for the container to start, so the app would come up
         # first and fail its initial connection.
         condition: service_healthy
+      mailpit:
+        condition: service_started
 
     restart: unless-stopped
 
@@ -91,5 +96,28 @@ services:
       timeout: 5s
       retries: 18
       start_period: 30s
+
+    restart: unless-stopped
+
+  mailpit:
+    # Catches everything the app sends instead of delivering it. Nothing
+    # here leaves the machine, so password resets and invites can be
+    # exercised without a real provider.
+    image: axllent/mailpit:v1.28
+
+    environment:
+      # WriteFreely only builds an SMTP mailer when a username and password
+      # are both set, so it always authenticates. Accept whatever it sends,
+      # over an unencrypted connection on an internal network.
+      - MP_SMTP_AUTH_ACCEPT_ANY=true
+      - MP_SMTP_AUTH_ALLOW_INSECURE=true
+
+    networks:
+      - internal
+      - external
+
+    ports:
+      # Web UI only. SMTP stays on the internal network.
+      - "127.0.0.1:8025:8025"
 
     restart: unless-stopped
