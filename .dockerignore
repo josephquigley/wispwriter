@@ -1,1 +1,39 @@
+# Keep .git: when WRITEFREELY_VERSION is not passed as a build arg, the
+# Makefile falls back to `git describe`, and excluding .git would silently
+# produce a binary reporting no version. CI passes the arg explicitly.
+
+# Build output
+build
+tmp
+cmd/writefreely/writefreely
+
+# Dependencies fetched during the build
+node_modules
+
+# Local configuration and data. config.ini in particular can hold live
+# database credentials, and must never enter the build context. The two
+# bind-mount directories sit next to the compose files, so without these
+# the development build would ship the running instance's keys, uploads
+# and database to the daemon.
+*.ini
+*.db
+static/local/custom.css
+/data
+/dbdata
+
+# Editor and OS noise
+*~
+*.swp
+*.swo
+.DS_Store
+
+# Container definitions themselves
 Dockerfile
+docker-compose.yml
+docker-compose.prod.yml
+.dockerignore
+
+# Docs and CI
+.github
+docs
+*.md
