@@ -396,16 +396,9 @@ func Configure(fname string, configSections string) (*SetupData, error) {
 			data.Config.App.Private = fedStatsType == "Private"
 		}
 
-		selPrompt = promptui.Select{
-			Templates: selTmpls,
-			Label:     "Automatically check for updates",
-			Items:     []string{"Yes", "No"},
-		}
-		_, updateCheckType, err := selPrompt.Run()
-		if err != nil {
-			return data, err
-		}
-		data.Config.App.UpdateChecks = updateCheckType == "Yes"
+		// Wisp Edition does not check for updates, so there is nothing to
+		// ask about here. See updateChecksSupported in updates.go.
+		data.Config.App.UpdateChecks = false
 	}
 
 	return data, Save(data.Config, fname)

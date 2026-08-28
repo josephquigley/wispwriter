@@ -36,6 +36,21 @@ This edition keeps that intact and adds a small set of blog management features,
 
 Plus assorted fixes carried on top of upstream. Each feature is developed on its own branch so it can be offered upstream independently.
 
+### Update checks are turned off
+
+WriteFreely's built-in update check asks `version.writefreely.org` for the
+latest upstream release and compares it against the upstream version this fork
+is based on. Because this edition carries changes upstream does not have, that
+comparison cannot say whether your install is current: it would report "up to
+date" on a stale Wisp Edition, and offer an upstream download that would drop
+the features this fork exists to provide.
+
+Rather than report something untrue, the check is disabled and the admin
+Updates page explains why. Watch
+[releases](https://github.com/josephquigley/wispwriter/releases) instead. See
+`updateChecksSupported` in `updates.go` to re-enable it once the check points
+at this fork's own releases.
+
 Everything below describes WriteFreely itself and applies to this edition too.
 
 ## Features
