@@ -1,6 +1,17 @@
-GITREV=`git describe | cut -c 2-`
-LDFLAGS=-ldflags="-s -w -X 'github.com/writefreely/writefreely.softwareVer=$(GITREV)' -extldflags '-static'"
-BASELDFLAGS=-ldflags="-s -w -X 'github.com/writefreely/writefreely.softwareVer=$(GITREV)'"
+# Version reported by the binary, in preference order: an explicit
+# VERSION=, the current git description, or the default compiled into
+# app.go. When none of the first two are available the version is left
+# alone rather than overridden with an empty string. `git describe` fails
+# whenever the build context has no usable git repository, which includes
+# a container build from a git worktree or a shallow CI checkout, and that
+# produced binaries reporting a bare "v".
+VERSION ?=
+GITREV := $(shell git describe 2>/dev/null | cut -c 2-)
+VERSTR := $(if $(VERSION),$(VERSION),$(GITREV))
+VERFLAG := $(if $(VERSTR),-X 'github.com/writefreely/writefreely.softwareVer=$(VERSTR)',)
+
+LDFLAGS=-ldflags="-s -w $(VERFLAG) -extldflags '-static'"
+BASELDFLAGS=-ldflags="-s -w $(VERFLAG)"
 
 GOCMD=go
 GOINSTALL=$(GOCMD) install $(LDFLAGS)
@@ -67,7 +78,7 @@ build-arm64: deps
 	xgo --targets=linux/arm64, -dest build/ $(LDFLAGS) -tags='netgo sqlite' -go go-1.25.x -out writefreely -pkg ./cmd/writefreely .
 
 build-docker :
-	$(DOCKERCMD) build -t $(IMAGE_NAME):latest -t $(IMAGE_NAME):$(GITREV) .
+	$(DOCKERCMD) build --build-arg WRITEFREELY_VERSION=$(VERSTR) -t $(IMAGE_NAME):latest $(if $(VERSTR),-t $(IMAGE_NAME):$(VERSTR),) .
 
 test:
 	$(GOTEST) -v ./...

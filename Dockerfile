@@ -21,6 +21,12 @@ WORKDIR /go/src/github.com/writefreely/writefreely
 # /etc/ssl/openssl.cnf, as this file used to do, has no effect on Node.
 ENV NODE_OPTIONS=--openssl-legacy-provider
 
+# git describe cannot work in every build context (notably a git
+# worktree, whose .git is a file pointing outside the context), and CI
+# checkouts are shallow and carry no tags. Pass the version in so the
+# binary never reports a bare "v".
+ARG WRITEFREELY_VERSION=
+
 # Resolve modules before copying the source, so editing a .go file doesn't
 # invalidate the dependency layer and re-download the module graph.
 COPY go.mod go.sum ./
@@ -28,7 +34,7 @@ RUN go mod download
 
 COPY . .
 
-RUN make build && make ui
+RUN make build VERSION="$WRITEFREELY_VERSION" && make ui
 
 # ------------------------------------------------------------- runtime ---
 FROM alpine:3.22
