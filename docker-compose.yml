@@ -2,55 +2,51 @@
 #
 # Before the first run:
 #   cp .env.example .env      and edit the passwords
-#   touch config.ini          (a bind-mounted file must exist, or Docker
-#                              creates a DIRECTORY with that name)
+#   mkdir -p data dbdata
+#   docker compose up -d --build
+#   docker compose run --rm app writefreely --config
 #   docker compose up -d
-#   docker compose exec writefreely-web writefreely --config
+#   docker compose exec app writefreely --create-admin youruser:yourpassword
 #
 # See docs/docker.md for the full walkthrough.
 
-volumes:
-  web-state:
-  db-data:
+name: writefreely-dev
 
 networks:
-  external_writefreely:
-  internal_writefreely:
+  external:
+  internal:
     internal: true
 
 services:
-  writefreely-web:
-    container_name: "writefreely-web"
-
-    # Built from this checkout rather than pulled. The mount paths below are
+  app:
+    # Built from this checkout rather than pulled. The mount path below is
     # the image's own layout, so a published tag that predates a change to
     # that layout would leave this file mounting a config the app never
     # reads. Building here keeps the two in step.
-    #
-    # To evaluate a release instead, replace build/image with
-    #   image: "ghcr.io/josephquigley/writefreely-colophon-edition:latest"
     build:
       context: .
-    image: writefreely:local
+      args:
+        WRITEFREELY_VERSION: ${WRITEFREELY_VERSION:-}
+    image: writefreely:dev
 
+    # Run as the host user, so the bind mount below needs no chown. The
+    # image defaults to uid 1000; override in .env when yours differs.
+    user: "${PUID:-1000}:${PGID:-1000}"
+
+    # One directory holds config, keys, the database if SQLite is used,
+    # and uploads.
     volumes:
-      - "web-state:/var/lib/writefreely"
-      - "./config.ini:/var/lib/writefreely/config.ini"
-
-    # Names this stack's service in the entrypoint's "generate a config"
-    # message, which otherwise reads as the production stack's name.
-    environment:
-      - WRITEFREELY_SERVICE_HINT=writefreely-web
+      - ./data:/var/lib/writefreely
 
     networks:
-      - "internal_writefreely"
-      - "external_writefreely"
+      - internal
+      - external
 
     ports:
       - "8080:8080"
 
     depends_on:
-      writefreely-db:
+      db:
         # Wait for the database to accept connections. A plain depends_on
         # only waits for the container to start, so the app would come up
         # first and fail its initial connection.
@@ -58,8 +54,7 @@ services:
 
     restart: unless-stopped
 
-  writefreely-db:
-    container_name: "writefreely-db"
+  db:
     # LinuxServer's image, matching docker-compose.prod.yml so both stacks
     # behave the same way. Its data directory is /config/databases, not
     # /var/lib/mysql -- the mount point below is the image's, not MariaDB's.
@@ -70,15 +65,18 @@ services:
     # /config/custom.cnf, which the image creates on first start.
     image: "lscr.io/linuxserver/mariadb:11.4.5"
 
+    # Deliberately NOT ./db: this repository already contains a Go package
+    # at db/, and mounting over it writes MariaDB's state into the source
+    # tree.
     volumes:
-      - "db-data:/config"
+      - ./dbdata:/config
 
     networks:
-      - "internal_writefreely"
+      - internal
 
     environment:
-      - PUID=${PUID:-65534}
-      - PGID=${PGID:-65534}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - TZ=${TZ:-Etc/UTC}
       - MYSQL_DATABASE=writefreely
       - MYSQL_USER=writefreely
