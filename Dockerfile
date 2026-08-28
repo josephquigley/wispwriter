@@ -16,13 +16,9 @@ RUN apk -U upgrade \
 
 WORKDIR /go/src/github.com/writefreely/writefreely
 
-# Enable the legacy OpenSSL provider before anything needs it. Appended
-# rather than overwritten: replacing the file discards the system's own
-# OpenSSL configuration.
-COPY ossl_legacy.cnf .
-RUN cat ossl_legacy.cnf >> /etc/ssl/openssl.cnf
-
-ENV GO111MODULE=on
+# webpack 4 hashes with md4, which OpenSSL 3 refuses by default. Node's
+# own flag is what re-enables it: appending a legacy provider section to
+# /etc/ssl/openssl.cnf, as this file used to do, has no effect on Node.
 ENV NODE_OPTIONS=--openssl-legacy-provider
 
 # Resolve modules before copying the source, so editing a .go file doesn't
@@ -42,7 +38,7 @@ LABEL org.opencontainers.image.description="WriteFreely is a clean, minimalist p
 LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 RUN apk -U upgrade \
-    && apk add --no-cache openssl ca-certificates \
+    && apk add --no-cache ca-certificates \
     && mkdir -p /usr/share/writefreely /var/lib/writefreely/uploads \
     && addgroup -g 1000 writefreely \
     && adduser -u 1000 -G writefreely -h /var/lib/writefreely -D writefreely \
@@ -64,15 +60,11 @@ ENV WRITEFREELY_SERVICE_HINT=app
 # config.ini lookup finds the mounted one without a -c flag.
 WORKDIR /var/lib/writefreely
 
-# Everything the instance writes lives here: config, keys, a SQLite
-# database if used, and uploads, which [uploads] dir should point at.
-VOLUME /var/lib/writefreely
-
 EXPOSE 8080
 
-# Runs as uid 1000. A bind-mounted state directory on the host must be
-# owned by 1000:1000, or the container cannot write its config, keys or
-# database.
+# Defaults to uid 1000. Both compose files override this with PUID and
+# PGID, so a bind-mounted state directory does not have to be chowned to
+# match a uid baked into the image.
 USER writefreely
 
 # The entrypoint generates keys when absent, creates the schema on a first
