@@ -1,31 +1,42 @@
 &nbsp;
 <p align="center">
-	<a href="https://writefreely.org"><img src="https://writefreely.org/img/writefreely.svg" width="350px" alt="WriteFreely" /></a>
+	<a href="https://github.com/josephquigley/wispwriter"><img src="https://writefreely.org/img/writefreely.svg" width="350px" alt="WriteFreely (Wisp Edition)" /></a>
 </p>
 <hr />
 <p align="center">
-	<a href="https://github.com/writefreely/writefreely/releases/">
-		<img src="https://img.shields.io/github/release/writefreely/writefreely.svg" alt="Latest release" />
+	<strong>WriteFreely (Wisp Edition)</strong>
+</p>
+<p align="center">
+	<a href="https://github.com/writefreely/writefreely">
+		<img src="https://img.shields.io/badge/fork%20of-writefreely%2Fwritefreely-blue" alt="Fork of writefreely/writefreely" />
 	</a>
-	<a href="https://github.com/writefreely/writefreely/releases/latest">
-		<img src="https://img.shields.io/github/downloads/writefreely/writefreely/total.svg" />
-	</a>
-	<a href="https://ghcr.io/writefreely/writefreely">
-		<img src="https://img.shields.io/badge/docker-%230db7ed.svg?logo=docker&logoColor=white" />
-	</a>
-	<a href="https://github.com/writefreely/writefreely/actions/workflows/docker-publish.yml">
-		<img src="https://github.com/writefreely/writefreely/actions/workflows/docker-publish.yml/badge.svg" alt="Build container image, publish as GitHub-package" />
+	<a href="https://github.com/josephquigley/wispwriter/blob/develop/LICENSE">
+		<img src="https://img.shields.io/badge/license-AGPL--3.0-green" alt="AGPL-3.0" />
 	</a>
 </p>
 &nbsp;
 
+> **This is a fork.** WriteFreely (Wisp Edition) is an unofficial fork of
+> [WriteFreely](https://github.com/writefreely/writefreely) by
+> [Musing Studio LLC](https://musing.studio). It is not affiliated with or
+> endorsed by the WriteFreely project. For the official software, go to
+> [writefreely.org](https://writefreely.org).
+
 WriteFreely is a clean, minimalist publishing platform made for writers. Start a blog, share knowledge within your organization, or build a community around the shared act of writing.
 
-![Screenshot of the Reader view of a WriteFreely instance, pen.writefree.ly.](https://files.writefreely.org/img/screens/pen-reader.png)
+This edition keeps that intact and adds a small set of blog management features, aiming at something closer to what Ghost offers while staying lighter and simpler.
 
-[Try the writing experience](https://write.as/new)
+## What this edition adds
 
-[Find an instance](https://writefreely.org/instances)
+* **Post management list.** An admin view for browsing, filtering and acting on posts in bulk.
+* **Multiple verification links.** More than one `rel="me"` link per blog, for verifying several profiles.
+* **Subscribe button options.** Control over whether and how the subscribe button appears.
+* **Reorderable pinned posts.** Drag pinned posts into the order you want, instead of taking the default.
+* **Image uploads.** Upload images from the editor rather than hosting them elsewhere.
+
+Plus assorted fixes carried on top of upstream. Each feature is developed on its own branch so it can be offered upstream independently.
+
+Everything below describes WriteFreely itself and applies to this edition too.
 
 ## Features
 
@@ -78,10 +89,14 @@ Start hacking on WriteFreely with our [developer setup guide](https://writefreel
 
 ## Contributing
 
-We gladly welcome contributions to WriteFreely, whether in the form of [code](https://github.com/writefreely/writefreely/blob/master/CONTRIBUTING.md#contributing-to-writefreely), [bug reports](https://github.com/writefreely/writefreely/issues/new?template=bug_report.md), [feature requests](https://discuss.write.as/c/feedback/feature-requests), [translations](https://poeditor.com/join/project/TIZ6HFRFdE), or [documentation](https://github.com/writefreely/documentation) improvements.
+Issues and pull requests specific to this edition belong on [this repo](https://github.com/josephquigley/wispwriter/issues). Anything that is not specific to the fork is better raised upstream, where it helps everyone.
 
-Before contributing anything, please read our [Contributing Guide](https://github.com/writefreely/writefreely/blob/master/CONTRIBUTING.md#contributing-to-writefreely). It describes the correct channels for submitting contributions and any potential requirements.
+Code here follows the upstream [Contributing Guide](https://github.com/writefreely/writefreely/blob/develop/CONTRIBUTING.md#contributing-to-writefreely), since features from this fork are offered upstream where they fit.
+
+Upstream welcomes contributions as [code](https://github.com/writefreely/writefreely/blob/develop/CONTRIBUTING.md#contributing-to-writefreely), [bug reports](https://github.com/writefreely/writefreely/issues/new?template=bug_report.md), [feature requests](https://discuss.write.as/c/feedback/feature-requests), [translations](https://poeditor.com/join/project/TIZ6HFRFdE), or [documentation](https://github.com/writefreely/documentation) improvements.
 
 ## License
 
 Copyright © 2018-2026 [Musing Studio LLC](https://musing.studio) and contributing authors. Licensed under the [AGPL](https://github.com/writefreely/writefreely/blob/develop/LICENSE).
+
+Changes made in this fork are released under the same license.

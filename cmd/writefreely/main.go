@@ -26,7 +26,7 @@ func main() {
 		fmt.Printf("%s\n", c.App.Version)
 	}
 	app := &cli.App{
-		Name:    "WriteFreely",
+		Name:    "WriteFreely (Wisp Edition)",
 		Usage:   "A beautifully pared-down blogging platform",
 		Version: writefreely.FormatVersion(),
 		Action:  legacyActions, // legacy due to use of flags for switching actions

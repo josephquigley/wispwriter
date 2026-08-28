@@ -299,7 +299,7 @@ func postDescription(content, title, friendlyId string) string {
 	maxLen := 140
 
 	if content == "" {
-		content = "WriteFreely is a painless, simple, federated blogging platform."
+		content = "WriteFreely (Wisp Edition) is a painless, simple, federated blogging platform."
 	} else {
 		fmtStr := "%s"
 		truncation := 0

@@ -52,8 +52,14 @@ const (
 	postsPerPage     = 10
 	postsPerArchPage = 40
 
+	// serverSoftware is the machine-readable software name, reported in the
+	// Server header and in nodeinfo. Fediverse crawlers parse it, so it stays
+	// as upstream sets it.
 	serverSoftware = "WriteFreely"
-	softwareURL    = "https://writefreely.org"
+	// serverSoftwareDisplay is the human-readable name shown to users. This
+	// fork brands itself as an edition so the upstream lineage stays visible.
+	serverSoftwareDisplay = "WriteFreely (Wisp Edition)"
+	softwareURL           = "https://writefreely.org"
 )
 
 var (
@@ -636,7 +642,7 @@ func ConnectToDatabase(app *App) error {
 
 // FormatVersion constructs the version string for the application
 func FormatVersion() string {
-	return serverSoftware + " " + softwareVer
+	return serverSoftwareDisplay + " " + softwareVer
 }
 
 // OutputVersion prints out the version of the application.
