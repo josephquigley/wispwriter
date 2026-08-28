@@ -22,6 +22,18 @@ func addJob(app *App, p *PublicPost, action string, delay int64) error {
 	return app.db.InsertJob(j)
 }
 
+// startOrphanImageSweep periodically removes uploaded images that were never
+// attached to a post, which is what a draft that was abandoned after a drop
+// leaves behind.
+func startOrphanImageSweep(app *App) {
+	t := time.NewTicker(1 * time.Hour)
+	for {
+		<-t.C
+		log.Info("[jobs] Sweeping orphaned image uploads...")
+		sweepOrphanedImages(app)
+	}
+}
+
 func startPublishJobsQueue(app *App) {
 	t := time.NewTicker(62 * time.Second)
 	for {
