@@ -190,12 +190,43 @@ type (
 		MailgunEurope  bool   `ini:"mailgun_europe"`
 	}
 
+	// UploadsCfg holds values that control user image uploads, configured
+	// under [uploads]:
+	//
+	//	[uploads]
+	//	enabled = true
+	//	max_size_mb = 10
+	//
+	// enabled defaults to false, so an instance operator opts in
+	// deliberately. max_size_mb bounds a single file, not a user's total
+	// storage.
+	//
+	// dir is where uploaded files are written. Left empty they go under
+	// the static asset tree, which keeps a plain install self-contained.
+	// A packaged install wants them somewhere writable and separate from
+	// the read-only assets, such as /var/lib/writefreely/uploads.
+	//
+	// Files are stored under the day they were uploaded and named after
+	// the file the writer sent, reduced to a slug: 2026/03/09/holiday.png.
+	// A name already used that day gains a suffix rather than overwriting
+	// what is there.
+	//
+	// Which image types are accepted is not configurable: it is fixed by
+	// the decoders compiled in, in decodeAndReencode. WebP is excluded
+	// because decoding it would require a dependency.
+	UploadsCfg struct {
+		Enabled   bool   `ini:"enabled"`
+		MaxSizeMB int    `ini:"max_size_mb"`
+		Dir       string `ini:"dir"`
+	}
+
 	// Config holds the complete configuration for running a writefreely instance
 	Config struct {
 		Server       ServerCfg       `ini:"server"`
 		Database     DatabaseCfg     `ini:"database"`
 		App          AppCfg          `ini:"app"`
 		Email        EmailCfg        `ini:"email"`
+		Uploads      UploadsCfg      `ini:"uploads"`
 		SlackOauth   SlackOauthCfg   `ini:"oauth.slack"`
 		WriteAsOauth WriteAsOauthCfg `ini:"oauth.writeas"`
 		GitlabOauth  GitlabOauthCfg  `ini:"oauth.gitlab"`
@@ -220,6 +251,9 @@ func New() *Config {
 			MaxBlogs:       1,
 			Federation:     true,
 			PublicStats:    true,
+		},
+		Uploads: UploadsCfg{
+			MaxSizeMB: 10,
 		},
 	}
 	c.UseMySQL(true)
@@ -247,6 +281,16 @@ func (cfg *Config) UseSQLite(fresh bool) {
 // standalone server with TLS enabled.
 func (cfg *Config) IsSecureStandalone() bool {
 	return cfg.Server.Port == 443 && cfg.Server.TLSCertPath != "" && cfg.Server.TLSKeyPath != ""
+}
+
+// MaxUploadBytes returns the largest accepted size of a single uploaded file,
+// in bytes.
+func (cfg *Config) MaxUploadBytes() int64 {
+	mb := cfg.Uploads.MaxSizeMB
+	if mb <= 0 {
+		mb = 10
+	}
+	return int64(mb) * 1024 * 1024
 }
 
 func (ac *AppCfg) LandingPath() string {

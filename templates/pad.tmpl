@@ -23,6 +23,8 @@
 
 {{end}}{{.Post.Content}}</textarea>
 
+{{if .UploadsEnabled}}		<div id="image-strip">{{if .Images}}{{range .Images}}<span class="uploaded-image" data-image-id="{{.ID}}" data-image-url="{{.URL}}"><img src="{{.URL}}" alt="{{.Filename}}" /><a href="#" class="remove-image" title="Remove this image">&#10005;</a></span>{{end}}{{end}}</div>
+{{end}}
 		<div class="alert success hidden" id="edited-elsewhere">This post has been updated elsewhere since you last published! <a href="#" id="erase-edit">Delete draft and reload</a>.</div>
 
 		<header id="tools">
@@ -72,7 +74,8 @@
 			</div>
 		</header>
 
-		<script src="/js/h.js"></script>
+{{if .UploadsEnabled}}		<script src="/js/image-upload.js"></script>
+{{end}}		<script src="/js/h.js"></script>
 		<script src="/js/modals.js"></script>
 		<script type="text/javascript" src="/js/menu.js"></script>
 		<script>
@@ -445,7 +448,14 @@
             http.send(JSON.stringify(params));
         }
 
-        try {
+{{if .UploadsEnabled}}		WFImageUpload.init({
+			textarea: document.getElementById('writer'),
+			strip: document.getElementById('image-strip'),
+			dropArea: document.body,
+			csrfToken: {{.CSRFToken}}
+		});
+
+{{end}}        try {
 		  (function() {
 			var wf=document.createElement('script');
 			wf.src = '/js/webfont.js';
