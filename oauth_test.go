@@ -217,7 +217,19 @@ func TestViewOauthInit(t *testing.T) {
 
 func TestViewOauthCallback(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		app := &MockOAuthDatastoreProvider{}
+		// The remote account is already attached to a local user, so the
+		// callback logs that user in and redirects. A remote account with no
+		// local user takes the signup page path instead, which needs
+		// templates this test does not load.
+		app := &MockOAuthDatastoreProvider{
+			DoDB: func() OAuthDatastore {
+				return &MockOAuthDatastore{
+					DoGetIDForRemoteUser: func(ctx context.Context, remoteUserID, provider, clientID string) (int64, error) {
+						return 1, nil
+					},
+				}
+			},
+		}
 		h := oauthHandler{
 			Config:   app.Config(),
 			DB:       app.DB(),
