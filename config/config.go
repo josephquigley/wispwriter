@@ -341,6 +341,30 @@ func Load(fname string) (*Config, error) {
 		uc.App.Theme = DefaultTheme
 	}
 
+	// The asset directories are empty in every configuration written for
+	// upstream's container image, which keeps templates, static and pages
+	// beside the binary in the working directory. This image keeps them at
+	// /usr/share/writefreely and works out of the state directory, so an
+	// empty value resolves against a directory holding no assets and the
+	// server exits loading templates.
+	//
+	// Filling them in here rather than at configuration time is what heals
+	// an instance switched over from another image: it never runs the
+	// interactive generator, so nothing else would ever set them. A value
+	// already in the file is left alone, including a deliberate one.
+	if _, isDocker := os.LookupEnv("WRITEFREELY_DOCKER"); isDocker {
+		parentDir := dockerAssetParentDir()
+		if uc.Server.TemplatesParentDir == "" {
+			uc.Server.TemplatesParentDir = parentDir
+		}
+		if uc.Server.StaticParentDir == "" {
+			uc.Server.StaticParentDir = parentDir
+		}
+		if uc.Server.PagesParentDir == "" {
+			uc.Server.PagesParentDir = parentDir
+		}
+	}
+
 	// Do any transformations
 	u, err := url.Parse(uc.App.Host)
 	if err != nil {
