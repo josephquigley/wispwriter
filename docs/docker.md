@@ -272,6 +272,24 @@ not false-negative on a password-protected or unconfigured instance.
 **Uploaded images disappeared after an upgrade.** `[uploads] dir` was not
 pointing at the state directory. See the note above.
 
+**`load templates: ... no such file or directory`, and the container
+restarts forever.** The asset directories in `config.ini` are empty or
+point somewhere with no assets. In this image they belong at
+`/usr/share/writefreely`:
+
+```ini
+[server]
+templates_parent_dir = /usr/share/writefreely
+static_parent_dir    = /usr/share/writefreely
+pages_parent_dir     = /usr/share/writefreely
+```
+
+Empty values are filled in with that path on start, so this only happens
+on an older image, or when the keys name a directory that really is wrong.
+A configuration carried over from upstream's image, where the assets sat
+in the working directory, is the usual source. See
+[switching-from-writefreely.md](switching-from-writefreely.md).
+
 **Password resets and invites never arrive.** No `[email]` section, or an
 incomplete one. WriteFreely needs `smtp_host`, `smtp_port`,
 `smtp_username` and `smtp_password` together, or the two Mailgun keys.

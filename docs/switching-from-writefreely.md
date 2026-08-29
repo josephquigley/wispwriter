@@ -4,6 +4,10 @@ An existing upstream WriteFreely instance can move to this edition in
 place. There is no export, no import and no data conversion. The same
 database, the same `config.ini` and the same keys carry over.
 
+The application is a drop-in. What is not is where a container keeps its
+state and its assets, so a container switch is mostly a matter of moving
+files and telling the config where they went.
+
 `scripts/switch-from-writefreely.sh` performs the switch. Read this page
 first anyway, because the one step that cannot be undone is the database
 migration, and the one step that must not be skipped is the backup.
@@ -101,10 +105,42 @@ its own through the docker CLI:
 ./scripts/switch-from-writefreely.sh --docker
 ```
 
-Either way it copies `config.ini` and the keys into `./data`, moves a
-SQLite database in and repoints `filename` at it, offers to enable image
-uploads, and prints the compose changes to make. It does not edit your
-compose file, does not touch the database service, and deletes nothing.
+Either way it copies `config.ini` and the keys into `./data`, fills in the
+asset directories, points `filename` at the SQLite database where the
+container will find it, offers to enable image uploads, and prints the
+compose changes to make. It does not edit your compose file, does not
+touch the database service, and deletes nothing.
+
+Two of those need explaining, because both bite an install that switches
+over by hand.
+
+**The asset directories.** A configuration written for upstream's image
+leaves them empty:
+
+```ini
+templates_parent_dir =
+static_parent_dir    =
+pages_parent_dir     =
+```
+
+That is correct there, where the assets sit in the working directory
+beside the binary. Here the working directory is the state directory and
+the assets are at `/usr/share/writefreely`, so an empty value resolves to
+a directory holding no templates and the server exits on start with
+`load templates`. The script writes the three keys, and this image also
+fills them in at runtime when they are empty, so an instance that was
+switched over by hand and is crash-looping recovers on the next restart
+without the config being touched.
+
+**A relative SQLite path.** `filename` is resolved by whatever container
+wrote it, so `filename = db/writefreely.db` in an upstream config means
+`/go/db/writefreely.db` inside upstream's container, which is some
+directory on the host that has nothing to do with where you run this
+script. The script looks for the file next to the config, then inside the
+state directory, and when it finds it already inside the state directory
+it leaves it there and points `filename` at the path it will have in the
+container. A database that lives elsewhere is copied in, and the original
+is left alone.
 
 Then point the app service at the new image and the new mount:
 
@@ -124,6 +160,14 @@ this, and the app reaches it by service name as before. Add `PUID` and
 
 `docker compose up -d` then starts the new image, and the entrypoint
 applies migration V18.
+
+The entrypoint migrates before the server starts, and it does not undo the
+migration if the server then fails to boot. A container that crash-loops
+after the switch is therefore an already-migrated database with an
+application that will not run, which is recoverable (fix the config and
+restart) but is not a state to keep trying blindly from. Read the first
+lines of `docker compose logs app`: the migration is reported there, and
+so is whatever the server objected to afterwards.
 
 The keys must be in `./data/keys` **before** that first start. The
 entrypoint treats absent keys as the signal that this is a new instance:
