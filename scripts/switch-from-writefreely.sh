@@ -283,34 +283,109 @@ copy_keys() {
 		die "could not read volume $keys_volume"
 }
 
-# Move a SQLite database into the state directory and point the config at
-# the path it will have inside the container. A MySQL config needs nothing:
-# the database lives in its own service either way.
+# Set a configuration key that has no value, leaving one that does alone.
+set_config_value() {
+	local file=$1
+	local key=$2
+	local value=$3
+
+	grep -q "^[[:space:]]*$key[[:space:]]*=[[:space:]]*[^[:space:]]" "$file" && return 0
+
+	if grep -q "^[[:space:]]*$key[[:space:]]*=" "$file"; then
+		sed "s|^\([[:space:]]*$key[[:space:]]*=[[:space:]]*\).*|\1$value|" \
+			"$file" >"$file.new"
+		mv "$file.new" "$file"
+	else
+		# No key to rewrite. It belongs to [server], which every config
+		# opens with, so append it under that heading.
+		awk -v line="$key = $value" '
+			/^[[:space:]]*\[server\][[:space:]]*$/ && !done { print; print line; done = 1; next }
+			{ print }
+			END { if (!done) { print "[server]"; print line } }
+		' "$file" >"$file.new"
+		mv "$file.new" "$file"
+	fi
+
+	say "set $key to $value"
+}
+
+# Point the asset directories at the tree inside the image. A config
+# written for upstream's image leaves them empty, because there the assets
+# sit in the working directory beside the binary. Here the working
+# directory is the state directory, so an empty value resolves to a
+# directory holding no templates and the server exits on start.
+#
+# Recent images fill these in themselves when they are empty, but writing
+# them makes the switch work on an image published before that, and makes
+# the layout visible in the file rather than implied.
+set_asset_dirs() {
+	local file=$1
+	local dir="${WRITEFREELY_DOCKER_PARENT_DIR:-/usr/share/writefreely}"
+
+	set_config_value "$file" templates_parent_dir "$dir"
+	set_config_value "$file" static_parent_dir "$dir"
+	set_config_value "$file" pages_parent_dir "$dir"
+}
+
+# Find the SQLite database the config names. The path is whatever the old
+# container resolved it against, so a relative one such as
+# "db/writefreely.db" is relative to that container's working directory,
+# not to the host directory this script runs in. The bind mount that
+# supplied it is normally somewhere under the state directory, so look
+# there too before giving up.
+find_sqlite_file() {
+	local file=$1
+	local candidate
+
+	for candidate in "$file" "$state_dir/$file" "$state_dir/$(basename "$file")"; do
+		if [ -f "$candidate" ]; then
+			echo "$candidate"
+			return 0
+		fi
+	done
+
+	return 1
+}
+
+# Point the config at the path the database will have inside the
+# container, moving the file into the state directory when it is not
+# already there. A MySQL config needs none of this: the database lives in
+# its own service either way.
 move_sqlite_database() {
-	local file dest
+	local file found found_abs state_abs rel
 
 	grep -qi '^[[:space:]]*type[[:space:]]*=[[:space:]]*sqlite3' "$state_dir/config.ini" || return 0
 
 	file=$(sed -n 's/^[[:space:]]*filename[[:space:]]*=[[:space:]]*//p' "$state_dir/config.ini" | head -n 1)
 	[ -n "$file" ] || die "config says sqlite3 but names no filename"
 
-	dest="$state_dir/$(basename "$file")"
+	found=$(find_sqlite_file "$file") || die "cannot find the SQLite database that config.ini names as $file. Looked in $state_dir too. Copy it into $state_dir yourself and edit filename"
 
-	if [ -f "$dest" ]; then
-		say "database already in $state_dir"
-	elif [ -f "$file" ]; then
-		cp -a "$file" "$dest"
-		say "copied $file into $state_dir"
-	else
-		die "cannot find the SQLite database at $file. Copy it into $state_dir yourself and edit filename"
-	fi
+	state_abs=$(cd "$state_dir" && pwd)
+	found_abs=$(cd "$(dirname "$found")" && pwd)/$(basename "$found")
+
+	case "$found_abs" in
+		"$state_abs"/*)
+			# Already inside what becomes the bind mount, so it is
+			# already where the container will look. Copying it again
+			# would leave two databases and no way to tell which one
+			# the instance is writing to.
+			rel=${found_abs#"$state_abs"/}
+			say "database already in $state_dir at $rel"
+			;;
+		*)
+			rel=$(basename "$file")
+			cp -a "$found_abs" "$state_abs/$rel"
+			say "copied $found into $state_dir"
+			;;
+	esac
 
 	# Rewritten through a temporary file rather than sed -i, whose
 	# spelling differs between GNU, BSD and busybox.
-	sed "s|^\([[:space:]]*filename[[:space:]]*=[[:space:]]*\).*|\1/var/lib/writefreely/$(basename "$file")|" \
+	sed "s|^\([[:space:]]*filename[[:space:]]*=[[:space:]]*\).*|\1/var/lib/writefreely/$rel|" \
 		"$state_dir/config.ini" >"$state_dir/config.ini.new"
 	mv "$state_dir/config.ini.new" "$state_dir/config.ini"
-	say "pointed filename at /var/lib/writefreely/$(basename "$file")"
+	say "pointed filename at /var/lib/writefreely/$rel"
 }
 
 # Match the ownership the containers run as, so the bind mount does not
@@ -367,6 +442,7 @@ switch_docker() {
 	fi
 
 	copy_keys
+	set_asset_dirs "$state_dir/config.ini"
 	move_sqlite_database
 
 	: "${uploads_dir:=/var/lib/writefreely/uploads}"
