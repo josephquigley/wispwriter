@@ -1,0 +1,403 @@
+#!/bin/sh
+###############################################################################
+##         WriteFreely (Wisp Edition) switch script                          ##
+##                                                                           ##
+##     Moves an existing upstream WriteFreely instance onto this fork.       ##
+##     It does not download anything and it does not touch the database      ##
+##     beyond running the migration the fork adds.                           ##
+##                                                                           ##
+##     usage: switch-from-writefreely.sh [--docker] [options]                ##
+###############################################################################
+#
+#	Copyright © 2026 Joseph Quigley.
+#
+#	This file is part of WriteFreely.
+#
+#	WriteFreely is free software: you can redistribute it and/or modify
+#	it under the terms of the GNU Affero General Public License, included
+#	in the LICENSE file in this source code package.
+#
+# The switch is a drop-in: same binary name, same config file, and one
+# additive migration (V18, post_images). What differs is where a container
+# keeps its state. Upstream's image works out of /go, with the config bind
+# mounted as a single file and the keys in a named volume. This image works
+# out of /var/lib/writefreely, where one directory holds the config, the
+# keys, the SQLite database if there is one, and uploads.
+#
+# So the docker half of this script is a file move, and the bare metal half
+# is a migration and a restart.
+
+set -eu
+
+mode=bare
+config=""
+state_dir="./data"
+keys_dir=""
+keys_volume=""
+uploads=ask
+uploads_dir=""
+assume_yes=false
+
+usage() {
+	cat <<'EOF'
+Switch an upstream WriteFreely instance to WriteFreely (Wisp Edition).
+
+usage: switch-from-writefreely.sh [--docker] [options]
+
+Bare metal (the default) runs from the installation root, the directory
+holding the writefreely binary, config.ini and keys. Install this fork's
+binary, templates, static and pages over the old ones first, then run this
+to migrate the database and enable what the fork adds.
+
+Docker (--docker) runs from the directory holding your compose file. It
+gathers the config, the keys and any SQLite database into one state
+directory for the new image to bind mount, then prints the compose changes
+to make. It never edits your compose file or starts containers.
+
+Options:
+  --docker              Container install rather than bare metal
+  --config FILE         Config file (default: ./config.ini)
+  --state-dir DIR       Docker only: state directory to build
+                        (default: ./data)
+  --keys-dir DIR        Docker only: read the existing keys from this
+                        directory rather than a named volume
+  --keys-volume NAME    Docker only: read the existing keys from this
+                        named volume. Needs the docker CLI. Autodetected
+                        when only one volume looks like a keys volume
+  --uploads             Enable image uploads without asking
+  --no-uploads          Leave image uploads alone without asking
+  --uploads-dir DIR     Directory uploads are written to. Defaults to
+                        /var/lib/writefreely/uploads under --docker, and
+                        to the built-in location otherwise
+  --yes, -y             Do not ask for confirmation before making changes
+  --help, -h            This text
+EOF
+}
+
+say() {
+	echo "==> $*"
+}
+
+warn() {
+	echo "    $*" >&2
+}
+
+die() {
+	echo "switch-from-writefreely: $*" >&2
+	exit 1
+}
+
+# Ask a yes/no question. Answers yes when --yes was passed, and no when
+# there is no terminal to ask at, so an unattended run never blocks and
+# never guesses in the affirmative.
+confirm() {
+	local reply
+
+	if [ "$assume_yes" = true ]; then
+		return 0
+	fi
+
+	if [ ! -t 0 ]; then
+		warn "not a terminal, assuming no: $1"
+		return 1
+	fi
+
+	printf '%s [y/N] ' "$1"
+	read -r reply
+	case "$reply" in
+		[Yy] | [Yy][Ee][Ss]) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--docker) mode=docker ;;
+		--config) config="${2:?--config needs a path}"; shift ;;
+		--state-dir) state_dir="${2:?--state-dir needs a path}"; shift ;;
+		--keys-dir) keys_dir="${2:?--keys-dir needs a path}"; shift ;;
+		--keys-volume) keys_volume="${2:?--keys-volume needs a name}"; shift ;;
+		--uploads) uploads=yes ;;
+		--no-uploads) uploads=no ;;
+		--uploads-dir) uploads_dir="${2:?--uploads-dir needs a path}"; shift ;;
+		-y | --yes) assume_yes=true ;;
+		-h | --help) usage; exit 0 ;;
+		*) die "unknown option: $1. Try --help" ;;
+	esac
+	shift
+done
+
+: "${config:=./config.ini}"
+
+# Append an [uploads] section. Sections are appended rather than edited,
+# because rewriting an existing one would discard whatever the operator
+# put in it. An [uploads] section already present is left as it is.
+enable_uploads() {
+	local file=$1
+	local dir=$2
+
+	if grep -q '^[[:space:]]*\[uploads\]' "$file"; then
+		say "[uploads] already in $file, leaving it alone"
+		return 0
+	fi
+
+	{
+		echo ""
+		echo "[uploads]"
+		echo "enabled     = true"
+		echo "max_size_mb = 10"
+		if [ -n "$dir" ]; then
+			echo "dir         = $dir"
+		fi
+	} >>"$file"
+
+	say "enabled image uploads in $file"
+	if [ -z "$dir" ]; then
+		warn "uploads land under the static asset tree. Set [uploads] dir"
+		warn "to somewhere outside it if your assets are replaced on upgrade."
+	fi
+}
+
+# Ask about uploads unless a flag already answered. Uploads are off by
+# default in a fresh config, so an instance that switches over keeps them
+# off until someone says otherwise.
+maybe_enable_uploads() {
+	local file=$1
+	local dir=$2
+
+	case "$uploads" in
+		no) return 0 ;;
+		yes) enable_uploads "$file" "$dir" ;;
+		ask)
+			echo ""
+			echo "This edition can accept image uploads from the editor."
+			echo "Files are stored on disk under the day they were uploaded,"
+			echo "and a size limit of 10 MB per file applies."
+			if confirm "Enable image uploads?"; then
+				enable_uploads "$file" "$dir"
+			else
+				say "leaving image uploads disabled"
+			fi
+			;;
+	esac
+}
+
+###############################################################################
+# Bare metal
+###############################################################################
+
+switch_bare_metal() {
+	local version
+
+	[ -f "$config" ] || die "no $config here. Run this from the installation root, or pass --config"
+	[ -x ./writefreely ] || die "no writefreely binary here. Run this from the installation root"
+	[ -f keys/email.aes256 ] || die "no keys/email.aes256 here. This does not look like an existing instance"
+
+	# The migration this script runs is the fork's, so the fork's binary
+	# has to be in place already. Running upstream's --migrate would be a
+	# no-op that looks like success.
+	version=$(./writefreely -v 2>/dev/null || true)
+	case "$version" in
+		*"Wisp Edition"*) say "found $version" ;;
+		"") die "./writefreely -v printed nothing. Is the binary runnable?" ;;
+		*)
+			warn "the binary here reports: $version"
+			die "install this fork's writefreely, templates, static and pages first, then run this again"
+			;;
+	esac
+
+	echo ""
+	echo "About to migrate the database this instance is configured to use."
+	echo "Migrations are not reversible. Back up the database and the keys"
+	echo "directory before continuing."
+	echo ""
+	confirm "Database and keys backed up, and the service stopped?" ||
+		die "nothing changed"
+
+	say "applying migrations"
+	./writefreely --migrate
+
+	maybe_enable_uploads "$config" "$uploads_dir"
+
+	echo ""
+	say "done. Start the service again, for example:"
+	echo "      systemctl start writefreely"
+}
+
+###############################################################################
+# Docker
+###############################################################################
+
+# Find the volume holding the keys. Upstream's compose mounts a named
+# volume at /go/keys, prefixed with the compose project name, so the name
+# varies by install and is only guessable when exactly one candidate
+# exists.
+detect_keys_volume() {
+	local candidates
+
+	command -v docker >/dev/null 2>&1 || return 1
+
+	candidates=$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep -i 'keys' || true)
+	[ "$(echo "$candidates" | grep -c .)" -eq 1 ] || return 1
+
+	echo "$candidates"
+}
+
+# Copy the keys into the state directory. Regenerating them instead would
+# invalidate every session and every value encrypted with them, so this is
+# the step that must not be skipped.
+copy_keys() {
+	local dest="$state_dir/keys"
+
+	if [ -f "$dest/email.aes256" ]; then
+		say "keys already in $dest"
+		return 0
+	fi
+
+	if [ -n "$keys_dir" ]; then
+		[ -f "$keys_dir/email.aes256" ] ||
+			die "no email.aes256 in $keys_dir. Is that the keys directory?"
+		mkdir -p "$dest"
+		cp -a "$keys_dir/." "$dest/"
+		say "copied keys from $keys_dir"
+		return 0
+	fi
+
+	if [ -z "$keys_volume" ]; then
+		keys_volume=$(detect_keys_volume || true)
+	fi
+
+	if [ -z "$keys_volume" ]; then
+		die "cannot find the existing keys. Pass --keys-volume NAME (docker volume ls), or mount them and pass --keys-dir"
+	fi
+
+	command -v docker >/dev/null 2>&1 ||
+		die "no docker CLI here to read volume $keys_volume. Mount the volume and pass --keys-dir instead"
+
+	say "copying keys from volume $keys_volume"
+	mkdir -p "$dest"
+	docker run --rm \
+		-v "$keys_volume":/from:ro \
+		-v "$(cd "$dest" && pwd)":/to \
+		alpine:3.22 sh -c 'cp -a /from/. /to/' ||
+		die "could not read volume $keys_volume"
+}
+
+# Move a SQLite database into the state directory and point the config at
+# the path it will have inside the container. A MySQL config needs nothing:
+# the database lives in its own service either way.
+move_sqlite_database() {
+	local file dest
+
+	grep -qi '^[[:space:]]*type[[:space:]]*=[[:space:]]*sqlite3' "$state_dir/config.ini" || return 0
+
+	file=$(sed -n 's/^[[:space:]]*filename[[:space:]]*=[[:space:]]*//p' "$state_dir/config.ini" | head -n 1)
+	[ -n "$file" ] || die "config says sqlite3 but names no filename"
+
+	dest="$state_dir/$(basename "$file")"
+
+	if [ -f "$dest" ]; then
+		say "database already in $state_dir"
+	elif [ -f "$file" ]; then
+		cp -a "$file" "$dest"
+		say "copied $file into $state_dir"
+	else
+		die "cannot find the SQLite database at $file. Copy it into $state_dir yourself and edit filename"
+	fi
+
+	# Rewritten through a temporary file rather than sed -i, whose
+	# spelling differs between GNU, BSD and busybox.
+	sed "s|^\([[:space:]]*filename[[:space:]]*=[[:space:]]*\).*|\1/var/lib/writefreely/$(basename "$file")|" \
+		"$state_dir/config.ini" >"$state_dir/config.ini.new"
+	mv "$state_dir/config.ini.new" "$state_dir/config.ini"
+	say "pointed filename at /var/lib/writefreely/$(basename "$file")"
+}
+
+# Match the ownership the containers run as, so the bind mount does not
+# need a chown later. Failing is not fatal: the operator may be on Docker
+# Desktop, where it makes no difference, or running this inside a
+# container that cannot chown a host directory.
+own_state_dir() {
+	local puid pgid
+
+	puid=$(sed -n 's/^PUID=//p' .env 2>/dev/null | head -n 1)
+	pgid=$(sed -n 's/^PGID=//p' .env 2>/dev/null | head -n 1)
+
+	# Inside a container the current ids are the container's, not the
+	# operator's, and root is the usual case. Handing a bind-mounted
+	# directory to root is worse than leaving it alone, so only .env
+	# answers the question here.
+	if [ -z "$puid" ] && [ -f /.dockerenv ] && [ "$(id -u)" = 0 ]; then
+		warn "no .env here and this is running as root in a container."
+		warn "Leaving ownership of $state_dir alone. Re-run with"
+		warn "--user \"\$(id -u):\$(id -g)\" if the files came out wrong."
+		return 0
+	fi
+
+	: "${puid:=$(id -u)}"
+	: "${pgid:=$(id -g)}"
+
+	if chown -R "$puid:$pgid" "$state_dir" 2>/dev/null; then
+		say "state directory owned by $puid:$pgid"
+	else
+		warn "could not chown $state_dir to $puid:$pgid. Do it yourself if"
+		warn "the container reports permission denied on start."
+	fi
+}
+
+switch_docker() {
+	[ -f "$config" ] || die "no $config here. Run this from the directory holding your compose file, or pass --config"
+
+	echo ""
+	echo "This gathers $config, the keys and any SQLite database into"
+	echo "$state_dir, which the new image bind mounts at /var/lib/writefreely."
+	echo "Nothing is deleted and your compose file is not edited."
+	echo ""
+	echo "Stop the stack and back up the database before continuing."
+	echo ""
+	confirm "Stack stopped, and database backed up?" || die "nothing changed"
+
+	mkdir -p "$state_dir"
+
+	if [ -f "$state_dir/config.ini" ]; then
+		say "config already in $state_dir"
+	else
+		cp -a "$config" "$state_dir/config.ini"
+		say "copied $config into $state_dir"
+	fi
+
+	copy_keys
+	move_sqlite_database
+
+	: "${uploads_dir:=/var/lib/writefreely/uploads}"
+	maybe_enable_uploads "$state_dir/config.ini" "$uploads_dir"
+	if grep -q '^[[:space:]]*\[uploads\]' "$state_dir/config.ini"; then
+		mkdir -p "$state_dir/uploads"
+	fi
+
+	own_state_dir
+
+	cat <<EOF
+
+==> done. Point the app service at the new image and the new mount:
+
+      writefreely-web:
+        image: ghcr.io/josephquigley/wispwriter:latest
+        user: "\${PUID:-1000}:\${PGID:-1000}"
+        volumes:
+          - $state_dir:/var/lib/writefreely
+
+    Remove the old keys volume and the config.ini file mount from that
+    service. Leave the database service alone. Then:
+
+      docker compose up -d
+
+    The entrypoint applies the migration this edition adds. See
+    docs/docker.md for the rest.
+EOF
+}
+
+case "$mode" in
+	bare) switch_bare_metal ;;
+	docker) switch_docker ;;
+esac

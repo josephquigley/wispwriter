@@ -53,6 +53,9 @@ RUN apk -U upgrade \
 
 COPY --from=build /go/src/github.com/writefreely/writefreely/cmd/writefreely/writefreely /usr/bin/writefreely
 COPY --from=build --chmod=755 /go/src/github.com/writefreely/writefreely/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# Carried in the image so an operator switching an upstream install over
+# can run it with docker run --entrypoint, without cloning the repository.
+COPY --from=build --chmod=755 /go/src/github.com/writefreely/writefreely/scripts/switch-from-writefreely.sh /usr/local/bin/switch-from-writefreely
 COPY --from=build /go/src/github.com/writefreely/writefreely/pages /usr/share/writefreely/pages
 COPY --from=build /go/src/github.com/writefreely/writefreely/static /usr/share/writefreely/static
 COPY --from=build /go/src/github.com/writefreely/writefreely/templates /usr/share/writefreely/templates
