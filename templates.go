@@ -12,6 +12,7 @@ package writefreely
 
 import (
 	"errors"
+	"fmt"
 	"html/template"
 	"io"
 	"net/http"
@@ -117,12 +118,26 @@ func initUserPage(parentDir, path, key string) {
 	))
 }
 
+// assetPathError reports a failure to read one of the asset trees, naming
+// the path it resolved to and the configuration key that sets it. The
+// resolved path is the useful part: an empty parent dir resolves against
+// the working directory, which is what a configuration written for a
+// different layout does, and the bare "no such file or directory" gives an
+// operator nothing to act on.
+func assetPathError(path, key string, err error) error {
+	if abs, absErr := filepath.Abs(path); absErr == nil {
+		path = abs
+	}
+	return fmt.Errorf("%s: %w (set %s in the [server] section of the configuration to the directory holding it)", path, err, key)
+}
+
 // InitTemplates loads all template files from the configured parent dir.
 func InitTemplates(cfg *config.Config) error {
 	log.Info("Loading templates...")
-	tmplFiles, err := os.ReadDir(filepath.Join(cfg.Server.TemplatesParentDir, templatesDir))
+	templatesPath := filepath.Join(cfg.Server.TemplatesParentDir, templatesDir)
+	tmplFiles, err := os.ReadDir(templatesPath)
 	if err != nil {
-		return err
+		return assetPathError(templatesPath, "templates_parent_dir", err)
 	}
 
 	for _, f := range tmplFiles {
@@ -135,7 +150,8 @@ func InitTemplates(cfg *config.Config) error {
 
 	log.Info("Loading pages...")
 	// Initialize all static pages that use the base template
-	err = filepath.Walk(filepath.Join(cfg.Server.PagesParentDir, pagesDir), func(path string, i os.FileInfo, err error) error {
+	pagesPath := filepath.Join(cfg.Server.PagesParentDir, pagesDir)
+	err = filepath.Walk(pagesPath, func(path string, i os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -147,12 +163,13 @@ func InitTemplates(cfg *config.Config) error {
 		return nil
 	})
 	if err != nil {
-		return err
+		return assetPathError(pagesPath, "pages_parent_dir", err)
 	}
 
 	log.Info("Loading user pages...")
 	// Initialize all user pages that use base templates
-	err = filepath.Walk(filepath.Join(cfg.Server.TemplatesParentDir, templatesDir, "user"), func(path string, f os.FileInfo, err error) error {
+	userTemplatesPath := filepath.Join(cfg.Server.TemplatesParentDir, templatesDir, "user")
+	err = filepath.Walk(userTemplatesPath, func(path string, f os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -172,7 +189,7 @@ func InitTemplates(cfg *config.Config) error {
 		return nil
 	})
 	if err != nil {
-		return err
+		return assetPathError(userTemplatesPath, "templates_parent_dir", err)
 	}
 
 	return nil
