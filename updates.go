@@ -59,32 +59,56 @@ func (uc *updatesCache) CheckNow() error {
 
 // AreAvailable updates the cache if the frequency duration has passed
 // then returns if the latest release is newer than the current running version.
-func (uc updatesCache) AreAvailable() bool {
-	if time.Since(uc.lastCheck) > uc.frequency {
+func (uc *updatesCache) AreAvailable() bool {
+	uc.mu.Lock()
+	stale := time.Since(uc.lastCheck) > uc.frequency
+	uc.mu.Unlock()
+
+	if stale {
 		uc.CheckNow()
 	}
-	return CompareSemver(uc.latestVersion, uc.currentVersion) == 1
+	return uc.AreAvailableNoCheck()
 }
 
 // AreAvailableNoCheck returns if the latest release is newer than the current
 // running version.
-func (uc updatesCache) AreAvailableNoCheck() bool {
+func (uc *updatesCache) AreAvailableNoCheck() bool {
+	uc.mu.Lock()
+	defer uc.mu.Unlock()
 	return CompareSemver(uc.latestVersion, uc.currentVersion) == 1
 }
 
 // LatestVersion returns the latest stored version available.
-func (uc updatesCache) LatestVersion() string {
+func (uc *updatesCache) LatestVersion() string {
+	uc.mu.Lock()
+	defer uc.mu.Unlock()
 	return uc.latestVersion
 }
 
-func (uc updatesCache) ReleaseURL() string {
-	return "https://writefreely.org/releases/" + uc.latestVersion
+// LastChecked returns the time of the last completed check.
+func (uc *updatesCache) LastChecked() time.Time {
+	uc.mu.Lock()
+	defer uc.mu.Unlock()
+	return uc.lastCheck
+}
+
+// CheckFailed returns whether the last check ended in an error.
+func (uc *updatesCache) CheckFailed() bool {
+	uc.mu.Lock()
+	defer uc.mu.Unlock()
+	return uc.checkError != nil
+}
+
+// ReleaseURL returns the full URL to the release page for the latest version
+// as stored in the cache.
+func (uc *updatesCache) ReleaseURL() string {
+	return "https://writefreely.org/releases/" + uc.LatestVersion()
 }
 
 // ReleaseNotesURL returns the full URL to the blog.writefreely.org release notes
 // for the latest version as stored in the cache.
-func (uc updatesCache) ReleaseNotesURL() string {
-	return wfReleaseNotesURL(uc.latestVersion)
+func (uc *updatesCache) ReleaseNotesURL() string {
+	return wfReleaseNotesURL(uc.LatestVersion())
 }
 
 func wfReleaseNotesURL(v string) string {
@@ -97,12 +121,12 @@ func wfReleaseNotesURL(v string) string {
 
 // newUpdatesCache returns an initialized updates cache
 func newUpdatesCache(expiry time.Duration) *updatesCache {
-	cache := updatesCache{
+	cache := &updatesCache{
 		frequency:      expiry,
 		currentVersion: "v" + softwareVer,
 	}
 	go cache.CheckNow()
-	return &cache
+	return cache
 }
 
 // updateChecksSupported reports whether this build can check for updates in a
