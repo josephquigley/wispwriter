@@ -2,6 +2,7 @@ package writefreely
 
 import (
 	"regexp"
+	"sync"
 	"testing"
 	"time"
 )
@@ -79,4 +80,43 @@ func TestUpdatesRoundTrip(t *testing.T) {
 			t.Fatalf("Malformed latest version. Expected: %s but got: %s", cache.latestVersion, gotLatest)
 		}
 	})
+}
+
+// TestUpdatesCacheConcurrentAccess covers the cache being read while the
+// background check writes to it, which is what newUpdatesCache sets up on
+// every start: it launches CheckNow in a goroutine and hands the cache
+// straight to callers. Run with -race, this fails when the readers take a
+// copy of the cache instead of locking it.
+func TestUpdatesCacheConcurrentAccess(t *testing.T) {
+	cache := &updatesCache{
+		frequency:      time.Hour,
+		currentVersion: "v0.1.0",
+		lastCheck:      time.Now(),
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cache.AreAvailableNoCheck()
+			cache.LatestVersion()
+			cache.LastChecked()
+			cache.CheckFailed()
+			cache.ReleaseNotesURL()
+		}()
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 8; i++ {
+			cache.mu.Lock()
+			cache.latestVersion = "v0.2.0"
+			cache.lastCheck = time.Now()
+			cache.mu.Unlock()
+		}
+	}()
+
+	wg.Wait()
 }
