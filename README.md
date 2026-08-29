@@ -95,6 +95,10 @@ See [docs/docker.md](docs/docker.md) for the container setup. Upstream's
 [installation guide](https://writefreely.org/start) covers configuration, which
 is unchanged here.
 
+Already running upstream WriteFreely? It switches over in place, keeping the
+same database, config and keys. See
+[docs/switching-from-writefreely.md](docs/switching-from-writefreely.md).
+
 ### Packages
 
 WriteFreely is packaged in several repositories, thanks to upstream's community.
