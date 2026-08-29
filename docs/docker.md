@@ -227,6 +227,16 @@ checkout that carries no tags. Without it those builds injected an empty
 version and produced binaries whose footer read a bare "v". CI resolves
 the version in a step of its own and passes it in.
 
+## Switching from an upstream WriteFreely container
+
+An existing upstream instance moves onto this image in place, but the two
+images keep their state in different places: upstream works out of `/go`,
+with the config bind mounted as a file and the keys in a named volume,
+and this one works out of `/var/lib/writefreely`. Gathering that state
+into one directory is what the switch consists of, and
+`scripts/switch-from-writefreely.sh` does it. See
+[switching-from-writefreely.md](switching-from-writefreely.md).
+
 ## Upgrading
 
 ```sh
