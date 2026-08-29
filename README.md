@@ -85,14 +85,28 @@ The quickest way to deploy WriteFreely is with [Write.as](https://write.as/write
 
 WriteFreely deploys as a static binary on any platform and architecture that Go supports. Just use our built-in SQLite support, or add a MySQL or MariaDB database, and you'll be up and running!
 
-For common platforms, start with our [pre-built binaries](https://github.com/writefreely/writefreely/releases/) and head over to our [installation guide](https://writefreely.org/start) to get started.
+This edition has no pre-built binaries yet. Build from source with `make build`, or run the published container image:
+
+```
+ghcr.io/josephquigley/wispwriter:latest
+```
+
+See [docs/docker.md](docs/docker.md) for the container setup. Upstream's
+[installation guide](https://writefreely.org/start) covers configuration, which
+is unchanged here.
 
 ### Packages
 
-You can also find WriteFreely in these package repositories, thanks to our wonderful community!
+WriteFreely is packaged in several repositories, thanks to upstream's community.
+These ship **upstream WriteFreely, not this edition**, so they do not include the
+features listed above:
 
 * [Arch User Repository](https://aur.archlinux.org/packages/writefreely/)
 * [Nanos Repository](https://repo.ops.city/v2/packages/eyberg/writefreely/show)
+
+Upstream's [pre-built binaries](https://github.com/writefreely/writefreely/releases/)
+are likewise upstream's software. Installing one over a Wisp Edition instance
+replaces it with upstream WriteFreely.
 
 ## Documentation
 
