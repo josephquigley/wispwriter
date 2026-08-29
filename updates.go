@@ -105,9 +105,31 @@ func newUpdatesCache(expiry time.Duration) *updatesCache {
 	return &cache
 }
 
+// updateChecksSupported reports whether this build can check for updates in a
+// way that tells the admin something true. It is false in Wisp Edition.
+//
+// The check asks version.writefreely.org for the latest upstream WriteFreely
+// release and compares it against softwareVer, which is the upstream version
+// this fork is based on. Wisp Edition carries changes upstream does not have
+// and cuts its own releases, so an upstream version number says nothing about
+// whether this install is current. Left enabled, the admin page would report
+// "up to date" on a stale Wisp Edition, or offer an upstream download that
+// would drop the features this fork exists to provide.
+//
+// Re-enable this once the check points at this fork's own releases and
+// compares against a fork version separate from softwareVer.
+const updateChecksSupported = false
+
 // InitUpdates initializes the updates cache, if the config value is set
 // It uses the defaultUpdatesCacheTime for the cache expiry
 func (app *App) InitUpdates() {
+	if !updateChecksSupported {
+		// See updateChecksSupported. Forcing the config value off keeps the
+		// admin nav link and the Updates page consistent with the fact that
+		// nothing is being checked, whatever the config file asks for.
+		app.cfg.App.UpdateChecks = false
+		return
+	}
 	if app.cfg.App.UpdateChecks {
 		app.updates = newUpdatesCache(defaultUpdatesCacheTime)
 	}

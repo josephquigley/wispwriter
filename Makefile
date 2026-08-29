@@ -21,7 +21,7 @@ GOGET=$(GOCMD) get
 BINARY_NAME=writefreely
 BUILDPATH=build/$(BINARY_NAME)
 DOCKERCMD=docker
-IMAGE_NAME=writeas/writefreely
+IMAGE_NAME=ghcr.io/josephquigley/wispwriter
 TMPBIN=./tmp
 
 all : build

@@ -655,7 +655,10 @@ func adminResetPassword(app *App, u *User, newPass string) error {
 func handleViewAdminUpdates(app *App, u *User, w http.ResponseWriter, r *http.Request) error {
 	check := r.URL.Query().Get("check")
 
-	if check == "now" && app.cfg.App.UpdateChecks {
+	// Guard on the cache rather than the config flag: update checks can be
+	// disabled at build time (see updateChecksSupported), which leaves this
+	// nil no matter what the config says.
+	if check == "now" && app.updates != nil {
 		app.updates.CheckNow()
 	}
 
@@ -674,7 +677,7 @@ func handleViewAdminUpdates(app *App, u *User, w http.ResponseWriter, r *http.Re
 		AdminPage: NewAdminPage(app),
 	}
 	p.CurReleaseNotesURL = wfReleaseNotesURL(p.Version)
-	if app.cfg.App.UpdateChecks {
+	if app.updates != nil {
 		p.LastChecked = app.updates.lastCheck.Format("January 2, 2006, 3:04 PM")
 		p.LastChecked8601 = app.updates.lastCheck.Format("2006-01-02T15:04:05Z")
 		p.LatestVersion = app.updates.LatestVersion()
