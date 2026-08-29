@@ -25,7 +25,11 @@ func TestUpdatesRoundTrip(t *testing.T) {
 	})
 
 	t.Run("Release URL", func(t *testing.T) {
-		url := cache.ReleaseNotesURL()
+		// newUpdatesCache looks up the latest version in a goroutine, so the
+		// cache's latest version is still empty by the time this subtest
+		// runs. Build the URL from a known version instead: what is under
+		// test here is the URL format, not the version lookup.
+		url := wfReleaseNotesURL("v0.15.0")
 
 		reg, err := regexp.Compile(`^https:\/\/blog.writefreely.org\/version(-\d+){1,}$`)
 		if err != nil {

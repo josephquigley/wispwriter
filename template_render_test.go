@@ -319,3 +319,24 @@ func TestTemplateRendering_MeAndBlogPages(t *testing.T) {
 		})
 	}
 }
+
+// TestInitTemplatesNamesTheResolvedPath covers the error an operator sees
+// when the asset directories point somewhere with no assets, which is what
+// a configuration written for a different container layout does. The bare
+// "open templates: no such file or directory" named neither the path it
+// resolved to nor the key that sets it.
+func TestInitTemplatesNamesTheResolvedPath(t *testing.T) {
+	cfg := config.New()
+	cfg.Server.TemplatesParentDir = filepath.Join(t.TempDir(), "nowhere")
+
+	err := InitTemplates(cfg)
+	if err == nil {
+		t.Fatal("InitTemplates succeeded with no templates to load")
+	}
+	if !strings.Contains(err.Error(), cfg.Server.TemplatesParentDir) {
+		t.Errorf("error does not name the path it looked in: %v", err)
+	}
+	if !strings.Contains(err.Error(), "templates_parent_dir") {
+		t.Errorf("error does not name the configuration key: %v", err)
+	}
+}

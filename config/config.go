@@ -25,6 +25,10 @@ const (
 	// FileName is the default configuration file name
 	FileName = "config.ini"
 
+	// DefaultTheme is the stylesheet served when a configuration does not
+	// name one.
+	DefaultTheme = "write"
+
 	UserNormal UserType = "user"
 	UserAdmin           = "admin"
 )
@@ -186,12 +190,43 @@ type (
 		MailgunEurope  bool   `ini:"mailgun_europe"`
 	}
 
+	// UploadsCfg holds values that control user image uploads, configured
+	// under [uploads]:
+	//
+	//	[uploads]
+	//	enabled = true
+	//	max_size_mb = 10
+	//
+	// enabled defaults to false, so an instance operator opts in
+	// deliberately. max_size_mb bounds a single file, not a user's total
+	// storage.
+	//
+	// dir is where uploaded files are written. Left empty they go under
+	// the static asset tree, which keeps a plain install self-contained.
+	// A packaged install wants them somewhere writable and separate from
+	// the read-only assets, such as /var/lib/writefreely/uploads.
+	//
+	// Files are stored under the day they were uploaded and named after
+	// the file the writer sent, reduced to a slug: 2026/03/09/holiday.png.
+	// A name already used that day gains a suffix rather than overwriting
+	// what is there.
+	//
+	// Which image types are accepted is not configurable: it is fixed by
+	// the decoders compiled in, in decodeAndReencode. WebP is excluded
+	// because decoding it would require a dependency.
+	UploadsCfg struct {
+		Enabled   bool   `ini:"enabled"`
+		MaxSizeMB int    `ini:"max_size_mb"`
+		Dir       string `ini:"dir"`
+	}
+
 	// Config holds the complete configuration for running a writefreely instance
 	Config struct {
 		Server       ServerCfg       `ini:"server"`
 		Database     DatabaseCfg     `ini:"database"`
 		App          AppCfg          `ini:"app"`
 		Email        EmailCfg        `ini:"email"`
+		Uploads      UploadsCfg      `ini:"uploads"`
 		SlackOauth   SlackOauthCfg   `ini:"oauth.slack"`
 		WriteAsOauth WriteAsOauthCfg `ini:"oauth.writeas"`
 		GitlabOauth  GitlabOauthCfg  `ini:"oauth.gitlab"`
@@ -209,13 +244,16 @@ func New() *Config {
 		},
 		App: AppCfg{
 			Host:           "http://localhost:8080",
-			Theme:          "write",
+			Theme:          DefaultTheme,
 			WebFonts:       true,
 			SingleUser:     true,
 			MinUsernameLen: 3,
 			MaxBlogs:       1,
 			Federation:     true,
 			PublicStats:    true,
+		},
+		Uploads: UploadsCfg{
+			MaxSizeMB: 10,
 		},
 	}
 	c.UseMySQL(true)
@@ -243,6 +281,16 @@ func (cfg *Config) UseSQLite(fresh bool) {
 // standalone server with TLS enabled.
 func (cfg *Config) IsSecureStandalone() bool {
 	return cfg.Server.Port == 443 && cfg.Server.TLSCertPath != "" && cfg.Server.TLSKeyPath != ""
+}
+
+// MaxUploadBytes returns the largest accepted size of a single uploaded file,
+// in bytes.
+func (cfg *Config) MaxUploadBytes() int64 {
+	mb := cfg.Uploads.MaxSizeMB
+	if mb <= 0 {
+		mb = 10
+	}
+	return int64(mb) * 1024 * 1024
 }
 
 func (ac *AppCfg) LandingPath() string {
@@ -282,6 +330,39 @@ func Load(fname string) (*Config, error) {
 	err = cfg.MapTo(uc)
 	if err != nil {
 		return nil, err
+	}
+
+	// Values are mapped onto a zero-valued Config, so any key absent from
+	// the file stays empty rather than picking up New()'s default. An empty
+	// theme is not a usable state: the base template builds the stylesheet
+	// URL from it, so a configuration that omits the key requests
+	// "/css/.css" and the instance renders with no styling at all.
+	if uc.App.Theme == "" {
+		uc.App.Theme = DefaultTheme
+	}
+
+	// The asset directories are empty in every configuration written for
+	// upstream's container image, which keeps templates, static and pages
+	// beside the binary in the working directory. This image keeps them at
+	// /usr/share/writefreely and works out of the state directory, so an
+	// empty value resolves against a directory holding no assets and the
+	// server exits loading templates.
+	//
+	// Filling them in here rather than at configuration time is what heals
+	// an instance switched over from another image: it never runs the
+	// interactive generator, so nothing else would ever set them. A value
+	// already in the file is left alone, including a deliberate one.
+	if _, isDocker := os.LookupEnv("WRITEFREELY_DOCKER"); isDocker {
+		parentDir := dockerAssetParentDir()
+		if uc.Server.TemplatesParentDir == "" {
+			uc.Server.TemplatesParentDir = parentDir
+		}
+		if uc.Server.StaticParentDir == "" {
+			uc.Server.StaticParentDir = parentDir
+		}
+		if uc.Server.PagesParentDir == "" {
+			uc.Server.PagesParentDir = parentDir
+		}
 	}
 
 	// Do any transformations

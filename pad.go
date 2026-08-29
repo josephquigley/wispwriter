@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gorilla/csrf"
 	"github.com/gorilla/mux"
 	"github.com/writeas/impart"
 	"github.com/writeas/web-core/log"
@@ -42,10 +43,16 @@ func handleViewPad(app *App, w http.ResponseWriter, r *http.Request) error {
 
 		Editing        bool        // True if we're modifying an existing post
 		EditCollection *Collection // Collection of the post we're editing, if any
+
+		UploadsEnabled bool
+		CSRFToken      string
+		Images         *[]PostImage
 	}{
-		StaticPage: pageForReq(app, r),
-		Post:       &RawPost{Font: "norm"},
-		User:       getUserSession(app, r),
+		StaticPage:     pageForReq(app, r),
+		Post:           &RawPost{Font: "norm"},
+		User:           getUserSession(app, r),
+		UploadsEnabled: app.cfg.Uploads.Enabled,
+		CSRFToken:      csrf.Token(r),
 	}
 	var err error
 	if appData.User != nil {
@@ -115,6 +122,13 @@ func handleViewPad(app *App, w http.ResponseWriter, r *http.Request) error {
 		return ErrPostFetchError
 	} else {
 		return ErrPostNotFound
+	}
+
+	if appData.UploadsEnabled {
+		appData.Images, err = app.db.GetImagesForPost(appData.Post.Id)
+		if err != nil {
+			log.Error("Unable to get post images for Pad: %v", err)
+		}
 	}
 
 	if err = templates[padTmpl].ExecuteTemplate(w, "pad", appData); err != nil {

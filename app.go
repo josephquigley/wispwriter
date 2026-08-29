@@ -52,8 +52,14 @@ const (
 	postsPerPage     = 10
 	postsPerArchPage = 40
 
+	// serverSoftware is the machine-readable software name, reported in the
+	// Server header and in nodeinfo. Fediverse crawlers parse it, so it stays
+	// as upstream sets it.
 	serverSoftware = "WriteFreely"
-	softwareURL    = "https://writefreely.org"
+	// serverSoftwareDisplay is the human-readable name shown to users. This
+	// fork brands itself as an edition so the upstream lineage stays visible.
+	serverSoftwareDisplay = "WriteFreely (Wisp Edition)"
+	softwareURL           = "https://writefreely.org"
 )
 
 var (
@@ -440,6 +446,17 @@ func Initialize(apper Apper, debug bool) (*App, error) {
 		log.Info("[jobs] Not starting publish jobs queue: no email provider is configured.")
 	}
 
+	if apper.App().cfg.Uploads.Enabled {
+		// Fail here rather than at the moment someone uploads: a missing
+		// volume or a directory the process cannot write to is already
+		// true at startup, and an operator is watching now.
+		if err := apper.App().ensureUploadsWritable(); err != nil {
+			return nil, fmt.Errorf("uploads are enabled but unusable: %s", err)
+		}
+		log.Info("Starting orphaned image sweep...")
+		go startOrphanImageSweep(apper.App())
+	}
+
 	// Handle local timeline, if enabled
 	if apper.App().cfg.App.LocalTimeline {
 		log.Info("Initializing local timeline...")
@@ -625,7 +642,7 @@ func ConnectToDatabase(app *App) error {
 
 // FormatVersion constructs the version string for the application
 func FormatVersion() string {
-	return serverSoftware + " " + softwareVer
+	return serverSoftwareDisplay + " " + softwareVer
 }
 
 // OutputVersion prints out the version of the application.
