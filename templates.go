@@ -113,6 +113,7 @@ func initUserPage(parentDir, path, key string) {
 		filepath.Join(parentDir, templatesDir, "user", "include", "footer.tmpl"),
 		filepath.Join(parentDir, templatesDir, "user", "include", "silenced.tmpl"),
 		filepath.Join(parentDir, templatesDir, "user", "include", "nav.tmpl"),
+		filepath.Join(parentDir, templatesDir, "user", "include", "post-row.tmpl"),
 	))
 }
 

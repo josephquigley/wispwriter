@@ -1,0 +1,54 @@
+// Post management lists, at /me/c/{alias}/posts and /admin/posts. Unlike
+// the public blog index, these show every row's actions all the time --
+// finding an old post's controls is the whole point of the page.
+table.post-list {
+	width: 100%;
+	table-layout: fixed;
+
+	th, td {
+		text-align: left;
+		padding: 0.5rem 0.75rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	td {
+		height: auto;
+	}
+
+	.post-row-blog, .post-row-date {
+		width: 9rem;
+	}
+	.post-row-state {
+		width: 7rem;
+	}
+	.post-row-actions {
+		width: 14rem;
+		font-family: @sansFont;
+		font-size: 0.9em;
+
+		a + a, a + .flat-select {
+			margin-left: 0.75em;
+		}
+	}
+
+	span.badge {
+		background-color: #aaa;
+		display: inline-block;
+		padding: 0.15em 0.5em;
+		color: white;
+		font-family: @sansFont;
+		font-size: 0.75em;
+		text-transform: uppercase;
+		.rounded(.25em);
+	}
+}
+
+@media (max-width: 60em) {
+	table.post-list {
+		.post-row-blog, .post-row-date {
+			display: none;
+		}
+	}
+}

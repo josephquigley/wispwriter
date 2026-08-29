@@ -1,0 +1,96 @@
+{{define "post-row"}}
+<tr id="post-{{.Post.ID}}" class="post-row">
+    <td class="post-row-title">
+        <a href="{{if .SingleUser}}/{{.Post.Slug.String}}{{else}}/{{.Alias}}/{{.Post.Slug.String}}{{end}}">{{if .Post.Title.String}}{{.Post.PlainDisplayTitle}}{{else}}{{.Post.DisplayDate}}{{end}}</a>
+    </td>
+    {{if .ShowBlog}}<td class="post-row-blog"><a href="/{{.Alias}}/">{{.Alias}}</a></td>{{end}}
+    <td class="post-row-date"><time datetime="{{.Post.Created8601}}">{{.Post.DisplayDate}}</time></td>
+    <td class="post-row-state">
+        <span class="badge pinned-badge"{{if not .Post.PinnedPosition.Valid}} style="display:none"{{end}}>Pinned</span>
+        {{if .Post.IsScheduled}}<span class="badge">Scheduled</span>{{end}}
+    </td>
+    <td class="post-row-actions">
+        <a class="action" href="/{{if not .SingleUser}}{{.Alias}}/{{end}}{{.Post.Slug.String}}/edit">edit</a>
+        <a class="pin action" href="/{{.Alias}}/{{.Post.Slug.String}}/pin" onclick="pinPost(event, '{{.Post.ID}}', '{{.Alias}}', {{if .Post.PinnedPosition.Valid}}true{{else}}false{{end}})">{{if .Post.PinnedPosition.Valid}}unpin{{else}}pin{{end}}</a>
+        <a class="delete action" href="/{{.Alias}}/{{.Post.Slug.String}}/delete" onclick="delPost(event, '{{.Post.ID}}')">delete</a>
+        {{if .Collections}}{{if gt (len .Collections) 1}}<span class="action flat-select">
+            <select id="move-{{.Post.ID}}" onchange="postActions.multiMove(this, '{{.Post.ID}}', {{if .SingleUser}}true{{else}}false{{end}})" title="Move this post to another blog">
+                <option style="display:none"></option>
+                <option value="|anonymous|" style="font-style:italic">Draft</option>
+                {{range .Collections}}{{if ne .Alias $.Alias}}<option value="{{.Alias}}">{{.DisplayTitle}}</option>{{end}}{{end}}
+            </select>
+            <label for="move-{{.Post.ID}}">move to...</label>
+        </span>{{end}}{{end}}
+    </td>
+</tr>
+{{end}}
+
+{{define "post-list-actions"}}
+<script type="text/javascript">
+var deleting = false;
+function delPost(e, id) {
+	e.preventDefault();
+	if (deleting) {
+		return;
+	}
+	if (!window.confirm('Are you sure you want to delete this post?')) {
+		return;
+	}
+	deleting = true;
+
+	var $row = document.getElementById('post-' + id);
+	var $delBtn = $row.getElementsByClassName('delete action')[0];
+	$delBtn.innerHTML = '...';
+
+	var http = new XMLHttpRequest();
+	http.open("DELETE", "/api/posts/" + id, true);
+	http.onreadystatechange = function() {
+		if (http.readyState == 4) {
+			deleting = false;
+			if (http.status == 204 || http.status == 404) {
+				$row.parentNode.removeChild($row);
+			} else if (http.status == 409) {
+				$delBtn.innerHTML = 'delete';
+				alert("Post is synced to another account. Delete the post from that account instead.");
+			} else {
+				$delBtn.innerHTML = 'delete';
+				alert("Failed to delete." + (http.status >= 500 ? " Please try again." : ""));
+			}
+		}
+	};
+	http.send();
+}
+
+var pinning = false;
+function pinPost(e, postID, alias, pinned) {
+	e.preventDefault();
+	if (pinning) {
+		return;
+	}
+	pinning = true;
+
+	var $row = document.getElementById('post-' + postID);
+	var $pinBtn = $row.getElementsByClassName('pin action')[0];
+	var $badge = $row.getElementsByClassName('pinned-badge')[0];
+	$pinBtn.innerHTML = '...';
+
+	var http = new XMLHttpRequest();
+	http.open("POST", "/api/collections/" + alias + "/" + (pinned ? "unpin" : "pin"), true);
+	http.setRequestHeader("Content-type", "application/json");
+	http.onreadystatechange = function() {
+		if (http.readyState == 4) {
+			pinning = false;
+			if (http.status == 200) {
+				$badge.style.display = pinned ? 'none' : '';
+				$pinBtn.innerHTML = pinned ? 'pin' : 'unpin';
+				$pinBtn.setAttribute('onclick', "pinPost(event, '" + postID + "', '" + alias + "', " + (!pinned) + ")");
+			} else {
+				$pinBtn.innerHTML = pinned ? 'unpin' : 'pin';
+				alert("Failed to " + (pinned ? "unpin" : "pin") + "." + (http.status >= 500 ? " Please try again." : ""));
+			}
+		}
+	};
+	http.send(JSON.stringify([{ "id": postID }]));
+}
+</script>
+{{end}}

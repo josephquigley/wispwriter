@@ -124,6 +124,8 @@ type writestore interface {
 	GetPostLikeCounts(postID string) (int64, error)
 	GetPostsCount(c *CollectionObj, includeFuture bool) error
 	GetPosts(cfg *config.Config, c *Collection, page int, includeFuture, forceRecentFirst, includePinned bool, contentType PostType) (*[]PublicPost, error)
+	GetCollectionPostsForOwner(collID int64, page int) (*[]PublicPost, int, error)
+	GetAllPostsForAdmin(page int) (*[]PublicPost, int, error)
 	GetAllPostsTaggedIDs(c *Collection, tag string, includeFuture bool) ([]string, error)
 	GetPostsTagged(cfg *config.Config, c *Collection, tag string, page int, includeFuture bool) (*[]PublicPost, error)
 
