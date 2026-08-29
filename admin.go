@@ -204,7 +204,7 @@ func handleViewAdminUsers(app *App, u *User, w http.ResponseWriter, r *http.Requ
 
 	p.Flashes, _ = getSessionFlashes(app, w, r, nil)
 	p.TotalUsers = app.db.GetAllUsersCount()
-	ttlPages := (p.TotalUsers - 1) / adminUsersPerPage + 1
+	ttlPages := (p.TotalUsers-1)/adminUsersPerPage + 1
 	p.TotalPages = []int{}
 	for i := 1; i <= int(ttlPages); i++ {
 		p.TotalPages = append(p.TotalPages, i)
@@ -675,13 +675,14 @@ func handleViewAdminUpdates(app *App, u *User, w http.ResponseWriter, r *http.Re
 	}
 	p.CurReleaseNotesURL = wfReleaseNotesURL(p.Version)
 	if app.cfg.App.UpdateChecks {
-		p.LastChecked = app.updates.lastCheck.Format("January 2, 2006, 3:04 PM")
-		p.LastChecked8601 = app.updates.lastCheck.Format("2006-01-02T15:04:05Z")
+		lastChecked := app.updates.LastChecked()
+		p.LastChecked = lastChecked.Format("January 2, 2006, 3:04 PM")
+		p.LastChecked8601 = lastChecked.Format("2006-01-02T15:04:05Z")
 		p.LatestVersion = app.updates.LatestVersion()
 		p.LatestReleaseURL = app.updates.ReleaseURL()
 		p.LatestReleaseNotesURL = app.updates.ReleaseNotesURL()
 		p.UpdateAvailable = app.updates.AreAvailable()
-		p.CheckFailed = app.updates.checkError != nil
+		p.CheckFailed = app.updates.CheckFailed()
 	}
 
 	showUserPage(w, "app-updates", p)
