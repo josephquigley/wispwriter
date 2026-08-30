@@ -21,8 +21,8 @@
 # additive migration (V18, post_images). What differs is where a container
 # keeps its state. Upstream's image works out of /go, with the config bind
 # mounted as a single file and the keys in a named volume. This image works
-# out of /var/lib/writefreely, where one directory holds the config, the
-# keys, the SQLite database if there is one, and uploads.
+# out of /data, where one directory holds the config, the keys, the
+# SQLite database if there is one, and uploads.
 #
 # So the docker half of this script is a file move, and the bare metal half
 # is a migration and a restart.
@@ -76,8 +76,8 @@ Options:
   --uploads             Enable image uploads without asking
   --no-uploads          Leave image uploads alone without asking
   --uploads-dir DIR     Directory uploads are written to. Defaults to
-                        /var/lib/writefreely/uploads under --docker, and
-                        to the built-in location otherwise
+                        /data/uploads under --docker, and to the built-in
+                        location otherwise
   --keep-originals      Docker only: leave the superseded config and
                         database under their own names. By default they
                         are renamed with a .pre-wisp suffix, so that only
@@ -473,10 +473,10 @@ move_sqlite_database() {
 
 	# Rewritten through a temporary file rather than sed -i, whose
 	# spelling differs between GNU, BSD and busybox.
-	sed "s|^\([[:space:]]*filename[[:space:]]*=[[:space:]]*\).*|\1/var/lib/writefreely/$rel|" \
+	sed "s|^\([[:space:]]*filename[[:space:]]*=[[:space:]]*\).*|\1/data/$rel|" \
 		"$state_dir/config.ini" >"$state_dir/config.ini.new"
 	replace_contents "$state_dir/config.ini"
-	say "pointed filename at /var/lib/writefreely/$rel"
+	say "pointed filename at /data/$rel"
 }
 
 # Match the ownership the containers run as, so the bind mount does not
@@ -524,7 +524,7 @@ switch_docker() {
 
 	echo ""
 	echo "This gathers $config, the keys and any SQLite database into"
-	echo "$state_dir, which the new image bind mounts at /var/lib/writefreely."
+	echo "$state_dir, which the new image bind mounts at /data."
 	echo "Nothing is deleted and your compose file is not edited. What it"
 	echo "supersedes is renamed with a .pre-wisp suffix and listed at the end."
 	echo ""
@@ -548,7 +548,7 @@ switch_docker() {
 	set_asset_dirs "$state_dir/config.ini"
 	move_sqlite_database
 
-	: "${uploads_dir:=/var/lib/writefreely/uploads}"
+	: "${uploads_dir:=/data/uploads}"
 	maybe_enable_uploads "$state_dir/config.ini" "$uploads_dir"
 	if grep -q '^[[:space:]]*\[uploads\]' "$state_dir/config.ini"; then
 		mkdir -p "$state_dir/uploads"
@@ -591,7 +591,7 @@ switch_docker() {
         image: ghcr.io/josephquigley/wispwriter:latest
         user: "\${PUID:-1000}:\${PGID:-1000}"
         volumes:
-          - $state_dir:/var/lib/writefreely
+          - $state_dir:/data
 
     Remove the old keys volume and the config.ini file mount from that
     service. Leave the database service alone. Then:

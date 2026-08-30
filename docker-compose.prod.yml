@@ -28,10 +28,10 @@ services:
     user: "${PUID:-1000}:${PGID:-1000}"
 
     # One directory holds config, keys, the database if SQLite is used,
-    # and uploads. Point [uploads] dir at /var/lib/writefreely/uploads so
-    # user content lands here rather than in the read-only asset tree.
+    # and uploads. Point [uploads] dir at /data/uploads so user content
+    # lands here rather than in the read-only asset tree.
     volumes:
-      - ./data:/var/lib/writefreely
+      - ./data:/data
 
     ports:
       - 127.0.0.1:8080:8080

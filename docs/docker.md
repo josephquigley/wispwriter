@@ -8,7 +8,7 @@ a single state directory.
 |---|---|
 | `/usr/bin/writefreely` | the binary |
 | `/usr/share/writefreely/` | `templates/`, `static/`, `pages/`, read-only |
-| `/var/lib/writefreely/` | `config.ini`, `keys/`, the SQLite database if used, `uploads/` |
+| `/data/` | `config.ini`, `keys/`, the SQLite database if used, `uploads/` |
 
 That state directory is the only thing to back up, and the only mount
 either compose file gives the application. The container's working
@@ -22,7 +22,7 @@ discard them:
 ```ini
 [uploads]
 enabled = true
-dir = /var/lib/writefreely/uploads
+dir = /data/uploads
 ```
 
 The entrypoint generates encryption keys when they are absent, creates
@@ -176,7 +176,7 @@ upgrade. Both stacks use the same two bind mounts:
 
 | Data | Where |
 |---|---|
-| Config, keys, uploads, SQLite database if used | `./data`, mounted at `/var/lib/writefreely` |
+| Config, keys, uploads, SQLite database if used | `./data`, mounted at `/data` |
 | MariaDB database | `./dbdata` (LinuxServer layout: files sit under `./dbdata/databases`) |
 
 Uploaded images live in the state directory only if `[uploads] dir` points
@@ -232,8 +232,8 @@ the version in a step of its own and passes it in.
 An existing upstream instance moves onto this image in place, but the two
 images keep their state in different places: upstream works out of `/go`,
 with the config bind mounted as a file and the keys in a named volume,
-and this one works out of `/var/lib/writefreely`. Gathering that state
-into one directory is what the switch consists of, and
+and this one works out of `/data`. Gathering that state into one
+directory is what the switch consists of, and
 `scripts/switch-from-writefreely.sh` does it. See
 [switching-from-writefreely.md](switching-from-writefreely.md).
 
@@ -315,7 +315,7 @@ service and point the config at a file in the state directory:
 ```ini
 [database]
 type     = sqlite3
-filename = /var/lib/writefreely/writefreely.db
+filename = /data/writefreely.db
 ```
 
 `./data` is a bind mount, so the file survives the container. The binary

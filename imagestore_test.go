@@ -334,10 +334,10 @@ func TestUploadsRootHonoursConfiguredDir(t *testing.T) {
 
 	// Set, they go exactly where the operator asked, which is how a
 	// packaged install keeps user content out of the read-only asset tree.
-	cfg.Uploads.Dir = "/var/lib/writefreely/uploads"
-	assert.Equal(t, "/var/lib/writefreely/uploads", app.uploadsRoot())
+	cfg.Uploads.Dir = "/data/uploads"
+	assert.Equal(t, "/data/uploads", app.uploadsRoot())
 
-	cfg.Uploads.Dir = "  /var/lib/writefreely/uploads  "
-	assert.Equal(t, "/var/lib/writefreely/uploads", app.uploadsRoot(),
+	cfg.Uploads.Dir = "  /data/uploads  "
+	assert.Equal(t, "/data/uploads", app.uploadsRoot(),
 		"a value with stray whitespace should not create a directory named with it")
 }
