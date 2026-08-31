@@ -330,6 +330,12 @@ func handleFetchCollectionFollowing(app *App, w http.ResponseWriter, r *http.Req
 func handleFetchCollectionInbox(app *App, w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Server", serverSoftware)
 
+	if app.federationAllowlistActive() {
+		if err := app.verifyAllowlistedSignature(r); err != nil {
+			return err
+		}
+	}
+
 	vars := mux.Vars(r)
 	alias := vars["alias"]
 	var c *Collection
