@@ -1,0 +1,68 @@
+name: Tests
+
+# This workflow uses pull_request_target so that its definition is read from
+# the base branch rather than from the pull request. Feature branches here are
+# cut from upstream-mirror and must stay free of fork-specific files, so they
+# do not carry this workflow and a plain pull_request trigger would never run
+# for them.
+#
+# pull_request_target normally runs with the base repository's secrets, and the
+# checkout below deliberately builds the pull request's own code. That is only
+# safe because this repository takes branches from its own maintainers. The job
+# requests no secrets and only read access to contents. Do not add secrets to
+# this workflow, and reconsider the trigger before accepting pull requests from
+# outside forks.
+on:
+  pull_request_target:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build ./...
+      # database-sqlite.go sits behind a build tag, so it is only compiled here.
+      - run: go build -tags sqlite ./...
+      - run: go test ./...
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Not gofmt clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+      # composites is disabled because the codebase constructs
+      # impart.HTTPError with unkeyed fields throughout, which is upstream's
+      # style and not worth ~300 changes to satisfy a linter.
+      - name: go vet
+        run: go vet -composites=false ./...
