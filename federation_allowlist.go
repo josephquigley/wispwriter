@@ -427,3 +427,11 @@ func (app *App) verifyAllowlistedSignature(r *http.Request) error {
 
 	return nil
 }
+
+// canDisablePrivateMode reports whether private mode may be turned off. It
+// may not while a federation allowlist is configured, because the two are
+// only meaningful together: an allowlist over public content protects
+// nothing.
+func (app *App) canDisablePrivateMode() bool {
+	return !app.federationAllowlistActive()
+}

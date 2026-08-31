@@ -659,3 +659,13 @@ func TestMakeActivityPostRefusesUnlistedInbox(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "allowlist")
 }
+
+func TestCanDisablePrivateMode(t *testing.T) {
+	// The admin settings form can turn private mode off at runtime, which
+	// would leave an allowlisted instance serving everything to everyone.
+	withList := allowlistApp(t, "example.org")
+	assert.False(t, withList.canDisablePrivateMode())
+
+	noList := allowlistApp(t, "")
+	assert.True(t, noList.canDisablePrivateMode())
+}
