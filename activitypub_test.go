@@ -1,12 +1,21 @@
 package writefreely
 
 import (
+	"bytes"
+	"database/sql"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/stretchr/testify/assert"
 	"github.com/writeas/web-core/activitystreams"
+
+	"github.com/writefreely/writefreely/config"
 )
 
 var actorTestTable = []struct {
@@ -106,4 +115,109 @@ func TestUpdateActivityIDVariesPerEdit(t *testing.T) {
 		t.Errorf("two edits of the same post produced the same activity id %q; "+
 			"receivers that dedupe by id would drop the second edit", firstID)
 	}
+}
+
+// newInboxTestApp builds a real, sqlite-backed App suitable for exercising
+// handleFetchCollectionInbox end-to-end, with a single user and collection
+// already created. When allowlist is non-empty the App is private and that
+// allowlist is configured; otherwise the App behaves as an ordinary,
+// non-private instance with federation open to everyone.
+func newInboxTestApp(t *testing.T, allowlist string) *App {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "writefreely.db")
+	db, err := sql.Open("sqlite3", dbPath+"?parseTime=true&cached=shared")
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	cfg := config.New()
+	cfg.UseSQLite(true)
+	cfg.Database.FileName = dbPath
+	cfg.App.Host = "https://local.example"
+	cfg.App.SingleUser = true
+	cfg.App.Private = allowlist != ""
+	cfg.App.FederationAllowlist = allowlist
+
+	app := &App{
+		db:  &datastore{DB: db, driverName: driverSQLite},
+		cfg: cfg,
+	}
+	if err := adminInitDatabase(app); err != nil {
+		t.Fatalf("init schema: %v", err)
+	}
+	if err := app.initFederationAllowlist(); err != nil {
+		t.Fatalf("initFederationAllowlist: %v", err)
+	}
+
+	u := &User{Username: "alice", HashedPass: []byte("x")}
+	if err := app.db.CreateUser(cfg, u, "", ""); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	return app
+}
+
+// inboxActivity is a minimal, well-formed but unhandled ActivityStreams
+// activity. It exists only to prove a request reached the inbox's normal
+// processing (JSON decode and onward), not to exercise any specific
+// activity type's side effects.
+const inboxActivity = `{"@context":"https://www.w3.org/ns/activitystreams","type":"Create","actor":"https://example.org/users/a","object":"https://example.org/note/1"}`
+
+func TestHandleFetchCollectionInboxAllowlistedSignatureProcessedNormally(t *testing.T) {
+	app := newInboxTestApp(t, "example.org")
+	k := testKey(t)
+	keyID := "https://example.org/users/a#main-key"
+	app.fedKeys.set(keyID, &k.PublicKey, time.Minute)
+
+	body := []byte(inboxActivity)
+	r := signedRequest(t, k, keyID, "POST", "https://local.example/api/collections/alice/inbox", body)
+	w := httptest.NewRecorder()
+
+	err := handleFetchCollectionInbox(app, w, r)
+
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandleFetchCollectionInboxRejectsUnsignedWhenAllowlisted(t *testing.T) {
+	app := newInboxTestApp(t, "example.org")
+
+	body := []byte(inboxActivity)
+	r := httptest.NewRequest("POST", "https://local.example/api/collections/alice/inbox", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	err := handleFetchCollectionInbox(app, w, r)
+
+	assert.Equal(t, ErrFederationNotAllowed, err)
+}
+
+func TestHandleFetchCollectionInboxRejectsUnlistedHost(t *testing.T) {
+	app := newInboxTestApp(t, "example.org")
+	k := testKey(t)
+	keyID := "https://evil.example/users/a#main-key"
+
+	body := []byte(inboxActivity)
+	r := signedRequest(t, k, keyID, "POST", "https://local.example/api/collections/alice/inbox", body)
+	w := httptest.NewRecorder()
+
+	err := handleFetchCollectionInbox(app, w, r)
+
+	assert.Equal(t, ErrFederationNotAllowed, err)
+}
+
+func TestHandleFetchCollectionInboxUnsignedProcessedNormallyWithNoAllowlist(t *testing.T) {
+	// The compatibility guarantee: with no allowlist configured, an
+	// unsigned inbound activity is processed exactly as it is today.
+	app := newInboxTestApp(t, "")
+
+	body := []byte(inboxActivity)
+	r := httptest.NewRequest("POST", "https://local.example/api/collections/alice/inbox", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	err := handleFetchCollectionInbox(app, w, r)
+
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
 }
