@@ -616,6 +616,149 @@ func TestVerifyRejectsSignatureWhoseOnlyHeadersParameterIsWronglyCased(t *testin
 	assert.Equal(t, ErrFederationNotAllowed, app.verifyAllowlistedSignature(r))
 }
 
+// TestCheckSignedHeadersTable pins the behaviour of the Signature-header
+// parsing pipeline (parseSignatureParams, signedHeaderSet, checkSignedHeaders)
+// directly, rather than only through the end-to-end gate. That matters
+// because verifyAllowlistedSignature collapses every failure into the same
+// ErrFederationNotAllowed: an end-to-end test cannot tell which rule fired,
+// so it cannot pin the specific parsing behaviour these functions rely on.
+//
+// These cases mirror go-fed's own parsing (github.com/go-fed/httpsig): it
+// splits the Signature header on "," and then each parameter on its first
+// "=", and it matches parameter KEYS with an exact-case switch against the
+// literal strings "keyId", "algorithm", "headers" and "signature". A
+// differently-cased key (Headers=, HEADERS=) is therefore invisible to
+// go-fed and must be invisible here too, which is why parseSignatureParams
+// deliberately does not lowercase keys before comparing them. The VALUE side
+// of the headers parameter (the header names it lists) is a different
+// matter: go-fed lowercases those before matching, so this parser does too,
+// on purpose. Do not "fix" apparent case asymmetry between the two: it is
+// intentional and is exactly what closes the gap between this parser and
+// go-fed's.
+func TestCheckSignedHeadersTable(t *testing.T) {
+	full := `keyId="https://example.org/users/a#k",algorithm="rsa-sha256",headers="(request-target) date host digest",signature="c2ln"`
+
+	cases := []struct {
+		name    string
+		sig     string
+		hasBody bool
+		wantErr string // substring expected in the error; "" means no error
+	}{
+		{
+			name:    "well-formed header with full required set is accepted",
+			sig:     full,
+			hasBody: true,
+			wantErr: "",
+		},
+		{
+			name:    "headers absent entirely defaults to go-fed's [date] and is rejected",
+			sig:     `keyId="https://example.org/users/a#k",algorithm="rsa-sha256",signature="c2ln"`,
+			hasBody: false,
+			wantErr: "no headers parameter",
+		},
+		{
+			name:    "headers present but missing digest, on a request with a body",
+			sig:     `keyId="https://example.org/users/a#k",headers="(request-target) date host",signature="c2ln"`,
+			hasBody: true,
+			wantErr: `required header "digest"`,
+		},
+		{
+			name:    "headers missing host",
+			sig:     `keyId="https://example.org/users/a#k",headers="(request-target) date digest",signature="c2ln"`,
+			hasBody: true,
+			wantErr: `required header "host"`,
+		},
+		{
+			name:    "headers missing (request-target)",
+			sig:     `keyId="https://example.org/users/a#k",headers="date host digest",signature="c2ln"`,
+			hasBody: true,
+			wantErr: `required header "(request-target)"`,
+		},
+		{
+			name:    "duplicated headers parameter, fabricated broad first, real narrow second",
+			sig:     `headers="(request-target) date host digest",headers="(request-target) date host"`,
+			hasBody: false,
+			wantErr: `duplicated "headers" parameter`,
+		},
+		{
+			name:    "duplicated headers parameter, the other way round",
+			sig:     `headers="(request-target) date host",headers="(request-target) date host digest"`,
+			hasBody: false,
+			wantErr: `duplicated "headers" parameter`,
+		},
+		{
+			name:    "duplicated keyId parameter",
+			sig:     `keyId="a",keyId="b",headers="(request-target) date host digest"`,
+			hasBody: true,
+			wantErr: `duplicated "keyId" parameter`,
+		},
+		{
+			name:    "differently-cased Headers key is not recognised, so headers is absent",
+			sig:     `Headers="(request-target) date host digest"`,
+			hasBody: true,
+			wantErr: "no headers parameter",
+		},
+		{
+			name:    "a parameter with no = at all",
+			sig:     `keyId="a",bogus,headers="(request-target) date host digest"`,
+			hasBody: false,
+			wantErr: "malformed Signature header parameter",
+		},
+		{
+			name:    "a trailing comma",
+			sig:     `keyId="a",headers="(request-target) date host digest",`,
+			hasBody: false,
+			wantErr: "malformed Signature header parameter",
+		},
+		{
+			name:    "a doubled comma",
+			sig:     `keyId="a",,headers="(request-target) date host digest"`,
+			hasBody: false,
+			wantErr: "malformed Signature header parameter",
+		},
+		{
+			name:    "a keyId query string containing the literal text headers= must not confuse the real parameter",
+			sig:     `keyId="https://example.org/u?headers=foo#k",algorithm="rsa-sha256",headers="(request-target) date host digest",signature="c2ln"`,
+			hasBody: true,
+			wantErr: "",
+		},
+		{
+			name:    "headers value is empty",
+			sig:     `headers=""`,
+			hasBody: false,
+			wantErr: `required header "(request-target)"`,
+		},
+		{
+			name:    "headers value is whitespace-only",
+			sig:     `headers="   "`,
+			hasBody: false,
+			wantErr: `required header "(request-target)"`,
+		},
+		{
+			name:    "header names differing in case from the required ones are still recognised",
+			sig:     `headers="Date HOST (Request-Target) Digest"`,
+			hasBody: true,
+			wantErr: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest("POST", "https://local.example/inbox", nil)
+			r.Header.Set("Signature", tc.sig)
+
+			err := checkSignedHeaders(r, tc.hasBody)
+			if tc.wantErr == "" {
+				assert.NoError(t, err)
+				return
+			}
+			if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestRequirePrivateModeAccessIsSkippedOnPublicInstance(t *testing.T) {
 	cfg := config.New()
 	cfg.App.Private = false
