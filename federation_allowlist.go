@@ -11,13 +11,21 @@
 package writefreely
 
 import (
+	"bytes"
 	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	fedsig "github.com/go-fed/httpsig"
+	"github.com/writeas/impart"
 	"github.com/writeas/web-core/activitypub"
 	"github.com/writeas/web-core/activitystreams"
 	"github.com/writeas/web-core/log"
@@ -204,4 +212,218 @@ func (app *App) allowlistedKey(keyID string) (*rsa.PublicKey, error) {
 
 	app.fedKeys.set(keyID, rsaKey, allowlistKeyTTL)
 	return rsaKey, nil
+}
+
+// ErrFederationNotAllowed is the single error every allowlist rejection
+// produces. The real cause is logged but never returned, because a response
+// that varies by cause lets a caller probe the allowlist.
+var ErrFederationNotAllowed = impart.HTTPError{Status: http.StatusUnauthorized, Message: "Unauthorized."}
+
+// checkRequestDate rejects a request whose Date header sits too far from now.
+// A signature stays valid forever on its own, so the date window is what stops
+// a captured request being replayed later.
+func checkRequestDate(r *http.Request, now time.Time) error {
+	d := r.Header.Get("Date")
+	if d == "" {
+		return fmt.Errorf("request has no Date header")
+	}
+	t, err := http.ParseTime(d)
+	if err != nil {
+		return fmt.Errorf("unparseable Date header %q: %v", d, err)
+	}
+	diff := now.Sub(t)
+	if diff > allowlistClockSkew || diff < -allowlistClockSkew {
+		return fmt.Errorf("Date header %q is outside the accepted window", d)
+	}
+	return nil
+}
+
+// requestHasBody reports whether r carries a message body. A signature that
+// omits the Digest header from its covered set leaves that body wholly
+// unbound to the signature, so this decides both whether Digest must be
+// signed and whether it is checked. Both call sites must use this same
+// predicate: they must never be able to disagree about whether a body is
+// present.
+//
+// ContentLength == 0 is the only value that means "definitely no body".
+// net/http reports ContentLength == -1 for a request of unknown length,
+// which is what a chunked request looks like, and that unknown case must be
+// treated as carrying a body. Otherwise an attacker could dodge the digest
+// requirement entirely by sending a chunked request instead of a request
+// with a Content-Length header: do not simplify this back to "> 0".
+func requestHasBody(r *http.Request) bool {
+	return r.ContentLength != 0 || len(r.TransferEncoding) > 0
+}
+
+// parseSignatureParams splits a raw Signature header value into its
+// key=value parameters the same way go-fed's own parser does: split on ",",
+// then split each parameter on its first "=", trimming surrounding double
+// quotes from the value. Keys are compared case-SENSITIVELY, on purpose:
+// go-fed's getSignatureComponents matches keys with an exact-case switch
+// against the literal strings "keyId", "algorithm", "headers" and
+// "signature", and silently ignores anything spelled differently. If this
+// parser lowercased keys before comparing them, a fabricated "Headers="
+// would be read as the authoritative headers parameter here while go-fed
+// ignored it and fell back to whatever the genuine, differently-cased (or
+// entirely absent) parameter actually said. Do not add a ToLower here: it
+// would make a wrongly-cased key authoritative on this side and invisible
+// on go-fed's, exactly the gap this parser exists to close.
+//
+// This exists so the signed header set is never decided by a parser that
+// could read the same bytes differently than the verifying library does. A
+// naive marker search (an earlier version of this function used
+// strings.Index to find "headers=") finds the FIRST occurrence of a
+// parameter, while go-fed's parser assigns on every match it sees and so
+// ends up holding the LAST one. An attacker who inserts a fabricated,
+// broader headers= parameter ahead of the real one can satisfy a
+// first-occurrence check while go-fed verifies against the real, narrower
+// set the signature was actually computed over, leaving the body (or the
+// request-target, or the host) unbound to what was verified. Rather than
+// switch to last-occurrence-wins and rest correctness on that reasoning
+// staying right forever, any Signature header with a duplicated parameter
+// key is refused outright: with duplicates refused, which occurrence would
+// "win" cannot matter.
+func parseSignatureParams(sigHeader string) (map[string]string, error) {
+	params := map[string]string{}
+	for _, p := range strings.Split(sigHeader, ",") {
+		kv := strings.SplitN(p, "=", 2)
+		if len(kv) != 2 {
+			return nil, fmt.Errorf("malformed Signature header parameter")
+		}
+		k := kv[0]
+		v := strings.Trim(kv[1], `"`)
+		if _, dup := params[k]; dup {
+			return nil, fmt.Errorf("Signature header has a duplicated %q parameter", k)
+		}
+		params[k] = v
+	}
+	return params, nil
+}
+
+// signedHeaderSet parses the headers parameter out of a raw Signature
+// header value and returns its elements, lowercased, as a set. go-fed
+// treats a request with no headers parameter as covering only "date", so
+// the absence of the parameter is reported as an error rather than an empty
+// set: callers must not treat it as acceptable.
+func signedHeaderSet(sigHeader string) (map[string]bool, error) {
+	params, err := parseSignatureParams(sigHeader)
+	if err != nil {
+		return nil, err
+	}
+	headers, ok := params["headers"]
+	if !ok {
+		return nil, fmt.Errorf("Signature header has no headers parameter")
+	}
+	set := map[string]bool{}
+	for _, h := range strings.Fields(headers) {
+		set[strings.ToLower(h)] = true
+	}
+	return set, nil
+}
+
+// checkSignedHeaders rejects a signature that does not cover the headers
+// this gate relies on. Verifying a signature only proves the remote signed
+// whatever it chose to sign: without this check, a signature that leaves out
+// (request-target), host or digest would let a captured signature be
+// replayed against a different method, path, destination or body.
+func checkSignedHeaders(r *http.Request, hasBody bool) error {
+	set, err := signedHeaderSet(r.Header.Get("Signature"))
+	if err != nil {
+		return err
+	}
+	required := []string{"(request-target)", "host", "date"}
+	if hasBody {
+		required = append(required, "digest")
+	}
+	for _, h := range required {
+		if !set[h] {
+			return fmt.Errorf("signature does not cover required header %q", h)
+		}
+	}
+	return nil
+}
+
+// verifyDigest recomputes the request body's SHA-256 and compares it to the
+// Digest header. Signature verification covers the header's value, not the
+// body that value claims to describe, so this is what ties the two together.
+// The body is restored for the next reader.
+func verifyDigest(r *http.Request) error {
+	body, err := io.ReadAll(r.Body)
+	r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("can't read body to check Digest: %v", err)
+	}
+
+	algo, want, found := strings.Cut(r.Header.Get("Digest"), "=")
+	if !found || !strings.EqualFold(algo, "SHA-256") {
+		return fmt.Errorf("missing or unsupported Digest header")
+	}
+	sum := sha256.Sum256(body)
+	got := base64.StdEncoding.EncodeToString(sum[:])
+	if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+		return fmt.Errorf("Digest header does not match the body")
+	}
+	return nil
+}
+
+// verifyAllowlistedSignature admits a request carrying a valid HTTP signature
+// from a host on the federation allowlist. Every failure returns
+// ErrFederationNotAllowed.
+//
+// The order of these checks is a security property, not an implementation
+// detail. The signing key's host is checked against the allowlist before the
+// key is fetched, so a request from a host that is not on the list never
+// causes an outbound connection to a URL the caller chose.
+func (app *App) verifyAllowlistedSignature(r *http.Request) error {
+	if !app.federationAllowlistActive() || r.Header.Get("Signature") == "" {
+		return ErrFederationNotAllowed
+	}
+
+	v, err := fedsig.NewVerifier(r)
+	if err != nil {
+		log.Info("Federation allowlist: malformed signature: %v", err)
+		return ErrFederationNotAllowed
+	}
+
+	keyID := v.KeyId()
+	u, err := url.Parse(keyID)
+	if err != nil || u.Hostname() == "" {
+		log.Info("Federation allowlist: unusable keyId %q", keyID)
+		return ErrFederationNotAllowed
+	}
+	if !app.federationAllowed(u.Hostname()) {
+		log.Info("Federation allowlist: host %s is not on the allowlist", u.Hostname())
+		return ErrFederationNotAllowed
+	}
+
+	if err := checkRequestDate(r, time.Now()); err != nil {
+		log.Info("Federation allowlist: %v", err)
+		return ErrFederationNotAllowed
+	}
+
+	hasBody := requestHasBody(r)
+	if err := checkSignedHeaders(r, hasBody); err != nil {
+		log.Info("Federation allowlist: %v", err)
+		return ErrFederationNotAllowed
+	}
+
+	pubKey, err := app.allowlistedKey(keyID)
+	if err != nil {
+		log.Info("Federation allowlist: can't get key %s: %v", keyID, err)
+		return ErrFederationNotAllowed
+	}
+	if err := v.Verify(pubKey, fedsig.RSA_SHA256); err != nil {
+		log.Info("Federation allowlist: bad signature from %s: %v", keyID, err)
+		return ErrFederationNotAllowed
+	}
+
+	if hasBody {
+		if err := verifyDigest(r); err != nil {
+			log.Info("Federation allowlist: %v", err)
+			return ErrFederationNotAllowed
+		}
+	}
+
+	return nil
 }
