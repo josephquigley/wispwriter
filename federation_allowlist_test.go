@@ -11,7 +11,10 @@
 package writefreely
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -113,4 +116,60 @@ func TestInboxAllowed(t *testing.T) {
 
 	open := allowlistApp(t, "")
 	assert.True(t, open.inboxAllowed("https://anything.example/inbox"))
+}
+
+// testKey generates an RSA key for signing and verifying in tests.
+func testKey(t *testing.T) *rsa.PrivateKey {
+	t.Helper()
+	k, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	return k
+}
+
+func TestKeyCacheStoresAndExpires(t *testing.T) {
+	c := newKeyCache()
+	pub := &testKey(t).PublicKey
+
+	_, found := c.get("https://example.org/users/a#main-key")
+	assert.False(t, found)
+
+	c.set("https://example.org/users/a#main-key", pub, time.Minute)
+	got, found := c.get("https://example.org/users/a#main-key")
+	assert.True(t, found)
+	assert.Equal(t, pub, got)
+
+	c.set("https://example.org/users/a#main-key", pub, -time.Minute)
+	_, found = c.get("https://example.org/users/a#main-key")
+	assert.False(t, found, "an expired entry must not be found")
+}
+
+func TestKeyCacheRemembersFailure(t *testing.T) {
+	// A nil key records a failed fetch, so an unreachable peer does not make
+	// every request wait on a network timeout.
+	c := newKeyCache()
+	c.set("https://example.org/users/a#main-key", nil, time.Minute)
+
+	got, found := c.get("https://example.org/users/a#main-key")
+	assert.True(t, found)
+	assert.Nil(t, got)
+}
+
+func TestAllowlistedKeyReturnsCachedFailureWithoutFetching(t *testing.T) {
+	app := allowlistApp(t, "example.org")
+	app.fedKeys.set("https://example.org/users/a#main-key", nil, time.Minute)
+
+	_, err := app.allowlistedKey("https://example.org/users/a#main-key")
+	assert.Error(t, err)
+}
+
+func TestAllowlistedKeyReturnsCachedKey(t *testing.T) {
+	app := allowlistApp(t, "example.org")
+	pub := &testKey(t).PublicKey
+	app.fedKeys.set("https://example.org/users/a#main-key", pub, time.Minute)
+
+	got, err := app.allowlistedKey("https://example.org/users/a#main-key")
+	assert.NoError(t, err)
+	assert.Equal(t, pub, got)
 }
