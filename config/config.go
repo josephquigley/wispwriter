@@ -162,6 +162,12 @@ type (
 		// Access
 		Private bool `ini:"private"`
 
+		// FederationAllowlist is a comma-separated list of hostnames allowed
+		// to read this instance's ActivityPub surface by signing their
+		// requests. It requires Private. An empty value leaves the instance
+		// behaving exactly as it did before this option existed.
+		FederationAllowlist string `ini:"federation_allowlist"`
+
 		// Additional functions
 		LocalTimeline bool   `ini:"local_timeline"`
 		UserInvites   string `ini:"user_invites"`

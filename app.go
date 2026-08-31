@@ -84,6 +84,12 @@ type App struct {
 	formDecoder  *schema.Decoder
 	updates      *updatesCache
 
+	// fedAllowlist holds the hostnames allowed to federate with this
+	// instance, parsed once from config. An empty map means no allowlist.
+	fedAllowlist map[string]bool
+	// fedKeys caches remote public keys used to verify incoming signatures.
+	fedKeys *keyCache
+
 	timeline *localTimeline
 }
 
@@ -158,6 +164,11 @@ func (app *App) LoadConfig() error {
 		return err
 	}
 	app.cfg = cfg
+	if err := app.initFederationAllowlist(); err != nil {
+		log.Error("Unable to load configuration: %v", err)
+		os.Exit(1)
+		return err
+	}
 	return nil
 }
 
