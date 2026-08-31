@@ -12,7 +12,10 @@ package writefreely
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
+
+	"github.com/writeas/web-core/log"
 )
 
 // parseFederationAllowlist turns a comma-separated list of hostnames into a
@@ -49,3 +52,36 @@ type keyCache struct{}
 
 // newKeyCache returns an empty key cache.
 func newKeyCache() *keyCache { return &keyCache{} }
+
+// federationAllowlistActive reports whether a federation allowlist is
+// configured.
+func (app *App) federationAllowlistActive() bool {
+	return len(app.fedAllowlist) > 0
+}
+
+// federationAllowed reports whether the given hostname may federate with this
+// instance. With no allowlist configured every host is allowed, which
+// preserves the behaviour of an instance that has not opted in.
+//
+// Matching is exact and case-insensitive. An entry never admits its
+// subdomains: example.org does not allow evil.example.org.
+func (app *App) federationAllowed(host string) bool {
+	if !app.federationAllowlistActive() {
+		return true
+	}
+	return app.fedAllowlist[strings.ToLower(host)]
+}
+
+// inboxAllowed reports whether an activity may be delivered to the given
+// inbox URL. A URL that cannot be parsed is never allowed.
+func (app *App) inboxAllowed(inboxURL string) bool {
+	if !app.federationAllowlistActive() {
+		return true
+	}
+	u, err := url.Parse(inboxURL)
+	if err != nil {
+		log.Error("Federation allowlist: can't parse inbox %q: %v", inboxURL, err)
+		return false
+	}
+	return app.federationAllowed(u.Hostname())
+}
