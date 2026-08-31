@@ -26,6 +26,7 @@ import (
 	"github.com/gorilla/sessions"
 	"github.com/stretchr/testify/assert"
 	"github.com/writeas/httpsig"
+	"github.com/writeas/web-core/activitystreams"
 
 	"github.com/writefreely/writefreely/config"
 )
@@ -646,4 +647,15 @@ func TestUserLevelDiscovery(t *testing.T) {
 	public := config.New()
 	public.App.Private = false
 	assert.Equal(t, UserLevelOptionalType, UserLevelDiscovery(public))
+}
+
+func TestMakeActivityPostRefusesUnlistedInbox(t *testing.T) {
+	// The allowlist is enforced at the single point every outbound activity
+	// passes through, so no delivery path can bypass it.
+	app := allowlistApp(t, "example.org")
+
+	err := makeActivityPost(app, &activitystreams.Person{}, "https://evil.example/inbox", map[string]string{"type": "Create"})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "allowlist")
 }

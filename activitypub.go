@@ -668,7 +668,7 @@ func handleFetchCollectionInbox(app *App, w http.ResponseWriter, r *http.Request
 			logOutgoingActivity("Accept", am)
 		}
 
-		err = makeActivityPost(app.cfg.App.Host, p, fullActor.Inbox, am)
+		err = makeActivityPost(app, p, fullActor.Inbox, am)
 		if err != nil {
 			log.Error("Unable to make activity POST: %v", err)
 			return
@@ -750,7 +750,17 @@ func handleFetchCollectionInbox(app *App, w http.ResponseWriter, r *http.Request
 	return nil
 }
 
-func makeActivityPost(hostName string, p *activitystreams.Person, url string, m interface{}) error {
+// makeActivityPost delivers an activity to a remote inbox. It is the single
+// point every outbound activity passes through, which is where the federation
+// allowlist is enforced: no delivery path can reach a host that is not on the
+// list.
+func makeActivityPost(app *App, p *activitystreams.Person, url string, m interface{}) error {
+	hostName := app.cfg.App.Host
+
+	if !app.inboxAllowed(url) {
+		return fmt.Errorf("refusing to post to %s: not on the federation allowlist", url)
+	}
+
 	if url == "" {
         log.Error("Target POST URL is empty! Person: %+v, Activity: %+v", p, m)
         return fmt.Errorf("target POST URL is empty")
@@ -933,7 +943,7 @@ func deleteFederatedPost(app *App, p *PublicPost, collID int64) error {
 		// See: https://git.pleroma.social/pleroma/pleroma/issues/1481
 		da.ID += "#Delete"
 
-		err = makeActivityPost(app.cfg.App.Host, actor, si, da)
+		err = makeActivityPost(app, actor, si, da)
 		if err != nil {
 			log.Error("Couldn't delete post! %v", err)
 		}
@@ -942,8 +952,10 @@ func deleteFederatedPost(app *App, p *PublicPost, collID int64) error {
 }
 
 func federatePost(app *App, p *PublicPost, collID int64, isUpdate bool) error {
-	// If app is private, do not federate
-	if app.cfg.App.Private {
+	// A private instance does not federate. With a federation allowlist
+	// configured it does, but only to the hosts on that list, which
+	// makeActivityPost enforces.
+	if app.cfg.App.Private && !app.federationAllowlistActive() {
 		return nil
 	}
 
@@ -1028,7 +1040,7 @@ func federatePost(app *App, p *PublicPost, collID int64, isUpdate bool) error {
 		if debugging {
 			logOutgoingActivity(label, activity)
 		}
-		err = makeActivityPost(app.cfg.App.Host, actor, si, activity)
+		err = makeActivityPost(app, actor, si, activity)
 		if err != nil {
 			log.Error("Couldn't post! %v", err)
 		}
@@ -1058,7 +1070,7 @@ func federatePost(app *App, p *PublicPost, collID int64, isUpdate bool) error {
 				log.Error("Unable to find remote user %s. Skipping: %v", tag.HRef, err)
 				continue
 			}
-			err = makeActivityPost(app.cfg.App.Host, actor, remoteUser.Inbox, activity)
+			err = makeActivityPost(app, actor, remoteUser.Inbox, activity)
 			if err != nil {
 				log.Error("Couldn't post! %v", err)
 			}
