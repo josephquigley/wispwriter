@@ -581,7 +581,11 @@ func handleAdminUpdateConfig(apper Apper, u *User, w http.ResponseWriter, r *htt
 	apper.App().cfg.App.Federation = r.FormValue("federation") == "on"
 	apper.App().cfg.App.PublicStats = r.FormValue("public_stats") == "on"
 	apper.App().cfg.App.Monetization = r.FormValue("monetization") == "on"
-	apper.App().cfg.App.Private = r.FormValue("private") == "on"
+	if r.FormValue("private") == "on" || !apper.App().canDisablePrivateMode() {
+		apper.App().cfg.App.Private = true
+	} else {
+		apper.App().cfg.App.Private = false
+	}
 	apper.App().cfg.App.LocalTimeline = r.FormValue("local_timeline") == "on"
 	if apper.App().cfg.App.LocalTimeline && apper.App().timeline == nil {
 		log.Info("Initializing local timeline...")

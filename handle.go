@@ -63,6 +63,18 @@ func UserLevelReader(cfg *config.Config) UserLevel {
 	return UserLevelOptionalType
 }
 
+// UserLevelDiscovery returns the permission level required for the federation
+// discovery endpoints. A configured federation allowlist opens them, because a
+// remote server must resolve a handle over webfinger before it has any actor
+// to sign a request with. Gating them would stop every follow before it
+// started.
+func UserLevelDiscovery(cfg *config.Config) UserLevel {
+	if len(parseFederationAllowlist(cfg.App.FederationAllowlist)) > 0 {
+		return UserLevelOptionalType
+	}
+	return UserLevelReader(cfg)
+}
+
 type (
 	handlerFunc          func(app *App, w http.ResponseWriter, r *http.Request) error
 	gopherFunc           func(app *App, w gopher.ResponseWriter, r *gopher.Request) error
@@ -643,6 +655,39 @@ func (h *Handler) OAuth(f handlerFunc) http.HandlerFunc {
 	}
 }
 
+// requirePrivateModeAccess enforces private mode for a request. It accepts an
+// API access token, a web session, or an HTTP signature from a host on the
+// federation allowlist, and returns nil when the instance is not private.
+func (h *Handler) requirePrivateModeAccess(r *http.Request) error {
+	app := h.app.App()
+	if !app.cfg.App.Private {
+		return nil
+	}
+
+	// Check if authenticated with an access token
+	_, apiErr := optionalAPIAuth(app, r)
+	if apiErr == nil {
+		return nil
+	}
+
+	authErr := apiErr
+	if apiErr == ErrNotLoggedIn {
+		// Fall back to web auth since there was no access token given
+		_, err := webAuth(app, r)
+		if err == nil {
+			return nil
+		}
+		authErr = err
+	}
+
+	// Finally, admit a remote server on the federation allowlist.
+	if err := app.verifyAllowlistedSignature(r); err == nil {
+		return nil
+	}
+
+	return authErr
+}
+
 func (h *Handler) AllReader(f handlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, r, func() error {
@@ -662,32 +707,13 @@ func (h *Handler) AllReader(f handlerFunc) http.HandlerFunc {
 			// Allow any origin, as public endpoints are handled in here
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 
-			if h.app.App().cfg.App.Private {
-				// This instance is private, so ensure it's being accessed by a valid user
-				// Check if authenticated with an access token
-				_, apiErr := optionalAPIAuth(h.app.App(), r)
-				if apiErr != nil {
-					if err, ok := apiErr.(impart.HTTPError); ok {
-						status = err.Status
-					} else {
-						status = 500
-					}
-
-					if apiErr == ErrNotLoggedIn {
-						// Fall back to web auth since there was no access token given
-						_, err := webAuth(h.app.App(), r)
-						if err != nil {
-							if err, ok := apiErr.(impart.HTTPError); ok {
-								status = err.Status
-							} else {
-								status = 500
-							}
-							return err
-						}
-					} else {
-						return apiErr
-					}
+			if err := h.requirePrivateModeAccess(r); err != nil {
+				if httpErr, ok := err.(impart.HTTPError); ok {
+					status = httpErr.Status
+				} else {
+					status = 500
 				}
+				return err
 			}
 
 			err := f(h.app.App(), w, r)
@@ -929,7 +955,19 @@ func correctPageFromLoginAttempt(r *http.Request) string {
 	return to
 }
 
+// LogHandlerFunc logs a request, and enforces private mode on it.
 func (h *Handler) LogHandlerFunc(f http.HandlerFunc) http.HandlerFunc {
+	return h.logHandlerFunc(f, false)
+}
+
+// LogHandlerFuncDiscovery is LogHandlerFunc for a federation discovery
+// endpoint, which a configured federation allowlist opens to unauthenticated
+// callers.
+func (h *Handler) LogHandlerFuncDiscovery(f http.HandlerFunc) http.HandlerFunc {
+	return h.logHandlerFunc(f, true)
+}
+
+func (h *Handler) logHandlerFunc(f http.HandlerFunc, discovery bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h.handleHTTPError(w, r, func() error {
 			status := 200
@@ -946,31 +984,14 @@ func (h *Handler) LogHandlerFunc(f http.HandlerFunc) http.HandlerFunc {
 				log.Info("%s", h.app.ReqLog(r, status, time.Since(start)))
 			}()
 
-			if h.app.App().cfg.App.Private {
-				// This instance is private, so ensure it's being accessed by a valid user
-				// Check if authenticated with an access token
-				_, apiErr := optionalAPIAuth(h.app.App(), r)
-				if apiErr != nil {
-					if err, ok := apiErr.(impart.HTTPError); ok {
-						status = err.Status
+			if !(discovery && h.app.App().federationAllowlistActive()) {
+				if err := h.requirePrivateModeAccess(r); err != nil {
+					if httpErr, ok := err.(impart.HTTPError); ok {
+						status = httpErr.Status
 					} else {
 						status = 500
 					}
-
-					if apiErr == ErrNotLoggedIn {
-						// Fall back to web auth since there was no access token given
-						_, err := webAuth(h.app.App(), r)
-						if err != nil {
-							if err, ok := apiErr.(impart.HTTPError); ok {
-								status = err.Status
-							} else {
-								status = 500
-							}
-							return err
-						}
-					} else {
-						return apiErr
-					}
+					return err
 				}
 			}
 

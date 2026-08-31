@@ -53,7 +53,10 @@ require (
 	golang.org/x/net v0.57.0
 )
 
-require github.com/xhit/go-simple-mail/v2 v2.16.0
+require (
+	github.com/go-fed/httpsig v0.1.1-0.20200204213531-0ef28562fabe
+	github.com/xhit/go-simple-mail/v2 v2.16.0
+)
 
 require (
 	code.as/core/socks v1.0.0 // indirect
@@ -66,7 +69,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/uniuri v0.0.0-20200228104902-7aecb25e1fe5 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
-	github.com/go-fed/httpsig v0.1.1-0.20200204213531-0ef28562fabe // indirect
 	github.com/gofrs/uuid v3.3.0+incompatible // indirect
 	github.com/gologme/log v1.2.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect

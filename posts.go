@@ -718,7 +718,7 @@ func newPost(app *App, w http.ResponseWriter, r *http.Request) error {
 	response := impart.WriteSuccess(w, newPost, http.StatusCreated)
 
 	if newPost.Collection != nil {
-		if !app.cfg.App.Private && app.cfg.App.Federation && !newPost.Created.After(time.Now()) {
+		if app.federationOutboundEnabled() && app.cfg.App.Federation && !newPost.Created.After(time.Now()) {
 			go federatePost(app, newPost, newPost.Collection.ID, false)
 		}
 		if app.cfg.Email.Enabled() && newPost.Collection.EmailSubsEnabled() {
@@ -838,7 +838,7 @@ func existingPost(app *App, w http.ResponseWriter, r *http.Request) error {
 
 	if pRes.CollectionID.Valid {
 		coll, err := app.db.GetCollectionBy("id = ?", pRes.CollectionID.Int64)
-		if err == nil && !app.cfg.App.Private && app.cfg.App.Federation {
+		if err == nil && app.federationOutboundEnabled() && app.cfg.App.Federation {
 			coll.hostName = app.cfg.App.Host
 			pRes.Collection = &CollectionObj{Collection: *coll}
 			go federatePost(app, pRes, pRes.Collection.ID, true)
@@ -979,7 +979,7 @@ func deletePost(app *App, w http.ResponseWriter, r *http.Request) error {
 	if t != nil {
 		t.Commit()
 	}
-	if coll != nil && !app.cfg.App.Private && app.cfg.App.Federation {
+	if coll != nil && app.federationOutboundEnabled() && app.cfg.App.Federation {
 		go deleteFederatedPost(app, pp, collID.Int64)
 	}
 
@@ -1038,7 +1038,7 @@ func addPost(app *App, w http.ResponseWriter, r *http.Request) error {
 		if pRes.Code != http.StatusOK {
 			continue
 		}
-		if !app.cfg.App.Private && app.cfg.App.Federation {
+		if app.federationOutboundEnabled() && app.cfg.App.Federation {
 			if !pRes.Post.Created.After(time.Now()) {
 				pRes.Post.Collection.hostName = app.cfg.App.Host
 				go federatePost(app, pRes.Post, pRes.Post.Collection.ID, false)
