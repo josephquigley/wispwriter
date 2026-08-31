@@ -785,9 +785,9 @@ func makeActivityPost(app *App, p *activitystreams.Person, url string, m interfa
 	}
 
 	if url == "" {
-        log.Error("Target POST URL is empty! Person: %+v, Activity: %+v", p, m)
-        return fmt.Errorf("target POST URL is empty")
-    }
+		log.Error("Target POST URL is empty! Person: %+v, Activity: %+v", p, m)
+		return fmt.Errorf("target POST URL is empty")
+	}
 
 	log.Info("POST %s", url)
 	b, err := json.Marshal(m)
