@@ -660,6 +660,24 @@ func TestMakeActivityPostRefusesUnlistedInbox(t *testing.T) {
 	assert.Contains(t, err.Error(), "allowlist")
 }
 
+func TestFederationOutboundEnabled(t *testing.T) {
+	// With no allowlist configured, this must reduce to exactly !Private, so
+	// behaviour on an unmodified instance is unchanged by construction.
+	notPrivate := config.New()
+	notPrivate.App.Private = false
+	app := &App{cfg: notPrivate}
+	if err := app.initFederationAllowlist(); err != nil {
+		t.Fatalf("initFederationAllowlist: %v", err)
+	}
+	assert.True(t, app.federationOutboundEnabled())
+
+	privateNoList := allowlistApp(t, "")
+	assert.False(t, privateNoList.federationOutboundEnabled())
+
+	privateWithList := allowlistApp(t, "example.org")
+	assert.True(t, privateWithList.federationOutboundEnabled())
+}
+
 func TestCanDisablePrivateMode(t *testing.T) {
 	// The admin settings form can turn private mode off at runtime, which
 	// would leave an allowlisted instance serving everything to everyone.

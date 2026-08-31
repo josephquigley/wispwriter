@@ -115,6 +115,13 @@ func (app *App) federationAllowlistActive() bool {
 	return len(app.fedAllowlist) > 0
 }
 
+// federationOutboundEnabled reports whether this instance may send activities
+// to remote servers. A private instance may, but only when a federation
+// allowlist names the hosts it is allowed to reach.
+func (app *App) federationOutboundEnabled() bool {
+	return !app.cfg.App.Private || app.federationAllowlistActive()
+}
+
 // federationAllowed reports whether the given hostname may federate with this
 // instance. With no allowlist configured every host is allowed, which
 // preserves the behaviour of an instance that has not opted in.
