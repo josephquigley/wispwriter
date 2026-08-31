@@ -204,7 +204,7 @@ type (
 	// dir is where uploaded files are written. Left empty they go under
 	// the static asset tree, which keeps a plain install self-contained.
 	// A packaged install wants them somewhere writable and separate from
-	// the read-only assets, such as /var/lib/writefreely/uploads.
+	// the read-only assets, such as /data/uploads.
 	//
 	// Files are stored under the day they were uploaded and named after
 	// the file the writer sent, reduced to a slug: 2026/03/09/holiday.png.

@@ -39,7 +39,7 @@ services:
     # One directory holds config, keys, the database if SQLite is used,
     # and uploads.
     volumes:
-      - ./data:/var/lib/writefreely
+      - ./data:/data
 
     networks:
       - internal

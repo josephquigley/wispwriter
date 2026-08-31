@@ -69,13 +69,13 @@ that upstream's do not ship.
 
 The application is a drop-in, but the image layout is not. Upstream's
 image works out of `/go`, with `config.ini` bind mounted as a single file
-and the keys in a named volume. This image works out of
-`/var/lib/writefreely`, where one directory holds the config, the keys,
-uploads, and the SQLite database if there is one.
+and the keys in a named volume. This image works out of `/data`, where
+one directory holds the config, the keys, uploads, and the SQLite
+database if there is one.
 
 | | `writeas/writefreely` | `ghcr.io/josephquigley/wispwriter` |
 |---|---|---|
-| Working directory | `/go` | `/var/lib/writefreely` |
+| Working directory | `/go` | `/data` |
 | Config | `/go/config.ini`, bind mounted file | `<state>/config.ini` |
 | Keys | named volume at `/go/keys` | `<state>/keys` |
 | Assets | `/go/{templates,static,pages}`, writable | `/usr/share/writefreely`, read only |
@@ -153,7 +153,7 @@ lists the results at the end:
 ==> live from here on:
 
       ./data/config.ini
-      /var/lib/writefreely/db/writefreely.db (inside the container)
+      /data/db/writefreely.db (inside the container)
 
     superseded, read by nothing, kept so you can roll back:
 
@@ -190,7 +190,7 @@ Then point the app service at the new image and the new mount:
     image: ghcr.io/josephquigley/wispwriter:latest
     user: "${PUID:-1000}:${PGID:-1000}"
     volumes:
-      - ./data:/var/lib/writefreely
+      - ./data:/data
 ```
 
 Remove the old `config.ini` file mount and the keys volume from that
@@ -229,7 +229,7 @@ the script:
 [uploads]
 enabled     = true
 max_size_mb = 10
-dir         = /var/lib/writefreely/uploads
+dir         = /data/uploads
 ```
 
 `max_size_mb` bounds one file, not a user's total storage. `dir` is where

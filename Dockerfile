@@ -3,9 +3,14 @@
 # directory. One volume to back up, and nothing mutable inside the tree
 # that ships with the image.
 #
+# The state directory is /data, which is where upstream's Dockerfile.prod
+# puts it. A more conventional choice would be /var/lib/writefreely, but
+# matching upstream means an operator moving between the two images keeps
+# the same bind mount.
+#
 #   /usr/bin/writefreely                             binary
 #   /usr/share/writefreely/{templates,static,pages}  read-only assets
-#   /var/lib/writefreely/                            config, keys, database, uploads
+#   /data/                                           config, keys, database, uploads
 
 # ---------------------------------------------------------------- build ---
 FROM golang:1.25-alpine3.22 AS build
@@ -46,10 +51,10 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 RUN apk -U upgrade \
     && apk add --no-cache ca-certificates \
-    && mkdir -p /usr/share/writefreely /var/lib/writefreely/uploads \
+    && mkdir -p /usr/share/writefreely /data/uploads \
     && addgroup -g 1000 writefreely \
-    && adduser -u 1000 -G writefreely -h /var/lib/writefreely -D writefreely \
-    && chown -R writefreely:writefreely /var/lib/writefreely
+    && adduser -u 1000 -G writefreely -h /data -D writefreely \
+    && chown -R writefreely:writefreely /data
 
 COPY --from=build /go/src/github.com/writefreely/writefreely/cmd/writefreely/writefreely /usr/bin/writefreely
 COPY --from=build --chmod=755 /go/src/github.com/writefreely/writefreely/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
@@ -68,7 +73,7 @@ ENV WRITEFREELY_SERVICE_HINT=app
 
 # The working directory is the state directory, so the binary's default
 # config.ini lookup finds the mounted one without a -c flag.
-WORKDIR /var/lib/writefreely
+WORKDIR /data
 
 EXPOSE 8080
 
