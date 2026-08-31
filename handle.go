@@ -63,6 +63,18 @@ func UserLevelReader(cfg *config.Config) UserLevel {
 	return UserLevelOptionalType
 }
 
+// UserLevelDiscovery returns the permission level required for the federation
+// discovery endpoints. A configured federation allowlist opens them, because a
+// remote server must resolve a handle over webfinger before it has any actor
+// to sign a request with. Gating them would stop every follow before it
+// started.
+func UserLevelDiscovery(cfg *config.Config) UserLevel {
+	if len(parseFederationAllowlist(cfg.App.FederationAllowlist)) > 0 {
+		return UserLevelOptionalType
+	}
+	return UserLevelReader(cfg)
+}
+
 type (
 	handlerFunc          func(app *App, w http.ResponseWriter, r *http.Request) error
 	gopherFunc           func(app *App, w gopher.ResponseWriter, r *gopher.Request) error
@@ -943,7 +955,19 @@ func correctPageFromLoginAttempt(r *http.Request) string {
 	return to
 }
 
+// LogHandlerFunc logs a request, and enforces private mode on it.
 func (h *Handler) LogHandlerFunc(f http.HandlerFunc) http.HandlerFunc {
+	return h.logHandlerFunc(f, false)
+}
+
+// LogHandlerFuncDiscovery is LogHandlerFunc for a federation discovery
+// endpoint, which a configured federation allowlist opens to unauthenticated
+// callers.
+func (h *Handler) LogHandlerFuncDiscovery(f http.HandlerFunc) http.HandlerFunc {
+	return h.logHandlerFunc(f, true)
+}
+
+func (h *Handler) logHandlerFunc(f http.HandlerFunc, discovery bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h.handleHTTPError(w, r, func() error {
 			status := 200
@@ -960,13 +984,15 @@ func (h *Handler) LogHandlerFunc(f http.HandlerFunc) http.HandlerFunc {
 				log.Info("%s", h.app.ReqLog(r, status, time.Since(start)))
 			}()
 
-			if err := h.requirePrivateModeAccess(r); err != nil {
-				if httpErr, ok := err.(impart.HTTPError); ok {
-					status = httpErr.Status
-				} else {
-					status = 500
+			if !(discovery && h.app.App().federationAllowlistActive()) {
+				if err := h.requirePrivateModeAccess(r); err != nil {
+					if httpErr, ok := err.(impart.HTTPError); ok {
+						status = httpErr.Status
+					} else {
+						status = 500
+					}
+					return err
 				}
-				return err
 			}
 
 			f(w, r)

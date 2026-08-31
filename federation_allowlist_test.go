@@ -624,3 +624,26 @@ func TestRequirePrivateModeAccessRejectsUnsignedRequest(t *testing.T) {
 	r := httptest.NewRequest("GET", "https://local.example/api/collections/x/outbox", nil)
 	assert.Error(t, h.requirePrivateModeAccess(r))
 }
+
+func TestUserLevelDiscovery(t *testing.T) {
+	// A private instance keeps discovery behind the login wall until an
+	// allowlist is configured. An allowlisted peer cannot sign anything until
+	// it has resolved a handle, so the allowlist has to open this door.
+	private := config.New()
+	private.App.Private = true
+	assert.Equal(t, UserLevelUserType, UserLevelDiscovery(private))
+
+	withList := config.New()
+	withList.App.Private = true
+	withList.App.FederationAllowlist = "example.org"
+	assert.Equal(t, UserLevelOptionalType, UserLevelDiscovery(withList))
+
+	blank := config.New()
+	blank.App.Private = true
+	blank.App.FederationAllowlist = " , "
+	assert.Equal(t, UserLevelUserType, UserLevelDiscovery(blank))
+
+	public := config.New()
+	public.App.Private = false
+	assert.Equal(t, UserLevelOptionalType, UserLevelDiscovery(public))
+}
