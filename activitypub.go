@@ -12,6 +12,7 @@ package writefreely
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
@@ -756,6 +757,22 @@ func handleFetchCollectionInbox(app *App, w http.ResponseWriter, r *http.Request
 	return nil
 }
 
+// actorPrivKey returns the decoded private key for an actor, refusing an empty
+// key rather than handing it to DecodePrivateKey.
+//
+// web-core's DecodePrivateKey tests whether pem.Decode returned a nil block and
+// then dereferences that same nil block while formatting the error, so an actor
+// whose keypair was never generated panics its caller instead of receiving an
+// error. Key generation shells out to openssl and can genuinely fail, so an
+// actor without a keypair is a reachable state rather than a theoretical one.
+func actorPrivKey(p *activitystreams.Person) (crypto.PrivateKey, error) {
+	k := p.GetPrivKey()
+	if len(k) == 0 {
+		return nil, fmt.Errorf("actor %s has no private key: its ActivityPub keypair was never generated", p.ID)
+	}
+	return activitypub.DecodePrivateKey(k)
+}
+
 // makeActivityPost delivers an activity to a remote inbox. It is the single
 // point every outbound activity passes through, which is where the federation
 // allowlist is enforced: no delivery path can reach a host that is not on the
@@ -786,7 +803,7 @@ func makeActivityPost(app *App, p *activitystreams.Person, url string, m interfa
 	r.Header.Add("Digest", "SHA-256="+base64.StdEncoding.EncodeToString(h.Sum(nil)))
 
 	// Sign using the 'Signature' header
-	privKey, err := activitypub.DecodePrivateKey(p.GetPrivKey())
+	privKey, err := actorPrivKey(p)
 	if err != nil {
 		return err
 	}
@@ -871,7 +888,7 @@ func resolveIRI(hostName, url string) ([]byte, error) {
 	r.Header.Add("Digest", "SHA-256="+base64.StdEncoding.EncodeToString(h.Sum(nil)))
 
 	// Sign using the 'Signature' header
-	privKey, err := activitypub.DecodePrivateKey(p.GetPrivKey())
+	privKey, err := actorPrivKey(p)
 	if err != nil {
 		return nil, err
 	}
