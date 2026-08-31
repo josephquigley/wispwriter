@@ -6,6 +6,12 @@ name: Tests
 # do not carry this workflow and a plain pull_request trigger would never run
 # for them.
 #
+# The checkout resolves refs/pull/N/merge rather than the pull request head, so
+# each job tests the result of merging the branch into its base. Feature
+# branches are cut from upstream-mirror and can sit many commits behind, so
+# testing a branch in isolation would fail on problems that develop has already
+# fixed and that the branch never touched.
+#
 # pull_request_target normally runs with the base repository's secrets, and the
 # checkout below deliberately builds the pull request's own code. That is only
 # safe because this repository takes branches from its own maintainers. The job
@@ -32,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -48,7 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
