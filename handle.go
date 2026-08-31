@@ -875,8 +875,6 @@ func (h *Handler) handleHTTPError(w http.ResponseWriter, r *http.Request, err er
 			h.errors.Blank.ExecuteTemplate(w, "base", p)
 			return
 		}
-		impart.WriteError(w, err)
-		return
 	}
 
 	impart.WriteError(w, impart.HTTPError{http.StatusInternalServerError, "This is an unhelpful error message for a miscellaneous internal error."})
