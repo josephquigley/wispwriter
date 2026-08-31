@@ -41,6 +41,9 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          # The in-job merge below needs real history, not a depth 1 clone,
+          # or git refuses it as unrelated histories.
+          fetch-depth: 0
       - name: Merge the pull request branch
         if: github.event_name == 'pull_request_target'
         run: |
@@ -65,6 +68,9 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          # The in-job merge below needs real history, not a depth 1 clone,
+          # or git refuses it as unrelated histories.
+          fetch-depth: 0
       - name: Merge the pull request branch
         if: github.event_name == 'pull_request_target'
         run: |
