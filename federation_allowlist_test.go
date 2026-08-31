@@ -84,6 +84,19 @@ func TestInitFederationAllowlistAllowsPublicInstanceWithNoList(t *testing.T) {
 	assert.Empty(t, app.fedAllowlist)
 }
 
+func TestInitFederationAllowlistWarnsButSucceedsWhenFederationDisabled(t *testing.T) {
+	// An allowlist with federation disabled is inert, not dangerous: nothing
+	// is ever sent or exposed, so this must not fail startup the way the
+	// private-mode mismatch does.
+	cfg := config.New()
+	cfg.App.Private = true
+	cfg.App.Federation = false
+	cfg.App.FederationAllowlist = "example.org"
+	app := &App{cfg: cfg}
+
+	assert.NoError(t, app.initFederationAllowlist())
+}
+
 // allowlistApp returns a private App with the given allowlist configured.
 func allowlistApp(t *testing.T, list string) *App {
 	t.Helper()

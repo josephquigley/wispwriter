@@ -45,14 +45,27 @@ func parseFederationAllowlist(s string) map[string]bool {
 	return allowed
 }
 
+// federationAllowlistInertWarning is logged when a federation allowlist is
+// configured but federation itself is switched off. It names both options
+// because either one, read alone, leaves an operator to guess the other.
+const federationAllowlistInertWarning = "WARNING: federation_allowlist is configured but federation = false: the allowlist will have no effect until federation is enabled."
+
 // initFederationAllowlist parses the configured allowlist into the App and
 // prepares the key cache. It fails when an allowlist is configured on an
 // instance that is not private, so an operator never ends up with an
 // allowlist they believe is in force over content that is in fact public.
+//
+// An allowlist configured with federation disabled is not refused: it is
+// merely inert, since nothing is ever sent or exposed, so this only logs a
+// warning rather than failing startup. That differs from the private-mode
+// case above, where booting anyway would be dangerous rather than inert.
 func (app *App) initFederationAllowlist() error {
 	app.fedAllowlist = parseFederationAllowlist(app.cfg.App.FederationAllowlist)
 	if len(app.fedAllowlist) > 0 && !app.cfg.App.Private {
 		return fmt.Errorf("federation_allowlist requires private = true: refusing to run an allowlist on a public instance")
+	}
+	if len(app.fedAllowlist) > 0 && !app.cfg.App.Federation {
+		log.Info(federationAllowlistInertWarning)
 	}
 	if app.fedKeys == nil {
 		app.fedKeys = newKeyCache()
