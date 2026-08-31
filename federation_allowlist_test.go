@@ -15,11 +15,14 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -829,6 +832,50 @@ func TestMakeActivityPostRefusesUnlistedInbox(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "allowlist")
+}
+
+// pemEncodePrivateKey PEM-encodes an RSA private key the same way
+// activitypub.DecodePrivateKey expects to read it back: a PKCS#1 block
+// labelled "RSA PRIVATE KEY".
+func pemEncodePrivateKey(t *testing.T, k *rsa.PrivateKey) []byte {
+	t.Helper()
+	return pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(k),
+	})
+}
+
+func TestMakeActivityPostDeliversToAllowlistedInbox(t *testing.T) {
+	// TestMakeActivityPostRefusesUnlistedInbox proves the block fires for an
+	// unlisted host. Nothing otherwise proved that an ALLOWED inbox still
+	// gets a delivery attempt: a flipped "!" in inboxAllowed would silently
+	// leak everything or silently block everything, and no test would fail.
+	// This drives makeActivityPost against a real httptest.Server standing
+	// in for an allowlisted inbox, and asserts the request actually arrives.
+	var received bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received = true
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+
+	inboxURL, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	// inboxAllowed matches on Hostname(), which strips the port, so the
+	// allowlist entry is the bare loopback host httptest.Server listens on.
+	app := allowlistApp(t, inboxURL.Hostname())
+
+	k := testKey(t)
+	person := &activitystreams.Person{}
+	person.PublicKey.ID = "https://example.org/users/a#main-key"
+	person.SetPrivKey(pemEncodePrivateKey(t, k))
+
+	err = makeActivityPost(app, person, srv.URL+"/inbox", map[string]string{"type": "Create"})
+
+	assert.NoError(t, err)
+	assert.True(t, received, "the allowlisted inbox must actually receive the delivery attempt")
 }
 
 func TestFederationOutboundEnabled(t *testing.T) {
