@@ -92,10 +92,19 @@ build-docker :
 # published image tags.
 #
 #   make bump VERSION=0.18.1
+#   make bump-patch     0.17.2 -> 0.17.3
+#   make bump-minor     0.17.2 -> 0.18.0
+#   make bump-major     0.17.2 -> 1.0.0
 #
 # Named bump rather than release because release already builds the
 # cross-compiled binary tarballs.
+#
+# Releases are cut on main, so this refuses to run anywhere else. It
+# commits and tags, and a tag left on the wrong commit is the part that is
+# painful to undo.
 bump:
+	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null); \
+		test "$$branch" = "main" || { echo "make bump must run on main, not $$branch"; exit 1; }
 	@if [ -z "$(VERSION)" ]; then echo "usage: make bump VERSION=x.y.z"; exit 1; fi
 	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "VERSION must look like x.y.z"; exit 1; }
 	@test -z "$$(git status --porcelain)" || { echo "working tree is dirty; commit or stash first"; exit 1; }
@@ -109,6 +118,19 @@ bump:
 	@echo
 	@echo "Tagged v$(VERSION). Publish with:"
 	@echo "    git push origin HEAD --tags"
+
+# Derive the next version from the constant bump itself maintains, then
+# hand off to bump so its branch, tag and working tree checks all still
+# apply. app.go is the source of truth rather than `git describe`, because
+# bump writes the constant and the tag in one commit, so they cannot drift.
+bump-major:
+	@"$(MAKE)" bump VERSION=$$(echo "$(DEFAULTVER)" | awk -F. '{print $$1+1".0.0"}')
+
+bump-minor:
+	@"$(MAKE)" bump VERSION=$$(echo "$(DEFAULTVER)" | awk -F. '{print $$1"."$$2+1".0"}')
+
+bump-patch:
+	@"$(MAKE)" bump VERSION=$$(echo "$(DEFAULTVER)" | awk -F. '{print $$1"."$$2"."$$3+1}')
 
 test:
 	$(GOTEST) -v ./...
