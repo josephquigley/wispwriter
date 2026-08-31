@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/sessions"
 	"github.com/stretchr/testify/assert"
 	"github.com/writeas/httpsig"
 
@@ -584,4 +585,42 @@ func TestVerifyRejectsSignatureWhoseOnlyHeadersParameterIsWronglyCased(t *testin
 	r.Header.Set("Signature", recased)
 
 	assert.Equal(t, ErrFederationNotAllowed, app.verifyAllowlistedSignature(r))
+}
+
+func TestRequirePrivateModeAccessIsSkippedOnPublicInstance(t *testing.T) {
+	cfg := config.New()
+	cfg.App.Private = false
+	app := &App{cfg: cfg}
+	if err := app.initFederationAllowlist(); err != nil {
+		t.Fatalf("initFederationAllowlist: %v", err)
+	}
+	h := &Handler{app: app}
+
+	r := httptest.NewRequest("GET", "https://local.example/", nil)
+	assert.NoError(t, h.requirePrivateModeAccess(r))
+}
+
+func TestRequirePrivateModeAccessAdmitsAllowlistedSignature(t *testing.T) {
+	app := allowlistApp(t, "example.org")
+	// requirePrivateModeAccess consults webAuth before the signature check,
+	// which needs a real session store to avoid a nil pointer dereference.
+	// No cookie is set on the request below, so this store never yields a
+	// session; it only lets webAuth run to completion and report "no session".
+	app.sessionStore = sessions.NewCookieStore([]byte("test-session-key"))
+	k := testKey(t)
+	keyID := "https://example.org/users/a#main-key"
+	app.fedKeys.set(keyID, &k.PublicKey, time.Minute)
+	h := &Handler{app: app}
+
+	r := signedRequest(t, k, keyID, "GET", "https://local.example/api/collections/x/outbox", nil)
+	assert.NoError(t, h.requirePrivateModeAccess(r))
+}
+
+func TestRequirePrivateModeAccessRejectsUnsignedRequest(t *testing.T) {
+	app := allowlistApp(t, "example.org")
+	app.sessionStore = sessions.NewCookieStore([]byte("test-session-key"))
+	h := &Handler{app: app}
+
+	r := httptest.NewRequest("GET", "https://local.example/api/collections/x/outbox", nil)
+	assert.Error(t, h.requirePrivateModeAccess(r))
 }

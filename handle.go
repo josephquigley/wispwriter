@@ -643,6 +643,39 @@ func (h *Handler) OAuth(f handlerFunc) http.HandlerFunc {
 	}
 }
 
+// requirePrivateModeAccess enforces private mode for a request. It accepts an
+// API access token, a web session, or an HTTP signature from a host on the
+// federation allowlist, and returns nil when the instance is not private.
+func (h *Handler) requirePrivateModeAccess(r *http.Request) error {
+	app := h.app.App()
+	if !app.cfg.App.Private {
+		return nil
+	}
+
+	// Check if authenticated with an access token
+	_, apiErr := optionalAPIAuth(app, r)
+	if apiErr == nil {
+		return nil
+	}
+
+	authErr := apiErr
+	if apiErr == ErrNotLoggedIn {
+		// Fall back to web auth since there was no access token given
+		_, err := webAuth(app, r)
+		if err == nil {
+			return nil
+		}
+		authErr = err
+	}
+
+	// Finally, admit a remote server on the federation allowlist.
+	if err := app.verifyAllowlistedSignature(r); err == nil {
+		return nil
+	}
+
+	return authErr
+}
+
 func (h *Handler) AllReader(f handlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, r, func() error {
@@ -662,32 +695,13 @@ func (h *Handler) AllReader(f handlerFunc) http.HandlerFunc {
 			// Allow any origin, as public endpoints are handled in here
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 
-			if h.app.App().cfg.App.Private {
-				// This instance is private, so ensure it's being accessed by a valid user
-				// Check if authenticated with an access token
-				_, apiErr := optionalAPIAuth(h.app.App(), r)
-				if apiErr != nil {
-					if err, ok := apiErr.(impart.HTTPError); ok {
-						status = err.Status
-					} else {
-						status = 500
-					}
-
-					if apiErr == ErrNotLoggedIn {
-						// Fall back to web auth since there was no access token given
-						_, err := webAuth(h.app.App(), r)
-						if err != nil {
-							if err, ok := apiErr.(impart.HTTPError); ok {
-								status = err.Status
-							} else {
-								status = 500
-							}
-							return err
-						}
-					} else {
-						return apiErr
-					}
+			if err := h.requirePrivateModeAccess(r); err != nil {
+				if httpErr, ok := err.(impart.HTTPError); ok {
+					status = httpErr.Status
+				} else {
+					status = 500
 				}
+				return err
 			}
 
 			err := f(h.app.App(), w, r)
@@ -946,32 +960,13 @@ func (h *Handler) LogHandlerFunc(f http.HandlerFunc) http.HandlerFunc {
 				log.Info("%s", h.app.ReqLog(r, status, time.Since(start)))
 			}()
 
-			if h.app.App().cfg.App.Private {
-				// This instance is private, so ensure it's being accessed by a valid user
-				// Check if authenticated with an access token
-				_, apiErr := optionalAPIAuth(h.app.App(), r)
-				if apiErr != nil {
-					if err, ok := apiErr.(impart.HTTPError); ok {
-						status = err.Status
-					} else {
-						status = 500
-					}
-
-					if apiErr == ErrNotLoggedIn {
-						// Fall back to web auth since there was no access token given
-						_, err := webAuth(h.app.App(), r)
-						if err != nil {
-							if err, ok := apiErr.(impart.HTTPError); ok {
-								status = err.Status
-							} else {
-								status = 500
-							}
-							return err
-						}
-					} else {
-						return apiErr
-					}
+			if err := h.requirePrivateModeAccess(r); err != nil {
+				if httpErr, ok := err.(impart.HTTPError); ok {
+					status = httpErr.Status
+				} else {
+					status = 500
 				}
+				return err
 			}
 
 			f(w, r)
