@@ -211,6 +211,10 @@ func handleFetchCollectionOutbox(app *App, w http.ResponseWriter, r *http.Reques
 		pp.Collection = res
 		o := pp.ActivityObject(app)
 		a := activitystreams.NewCreateActivity(o)
+		// ActivityStreams 2.0 requires an id to identify exactly one
+		// object, and an activity is a distinct object from the one it
+		// wraps, so the two must not share an id.
+		a.ID += "#Create"
 		a.Context = nil
 		ocp.OrderedItems = append(ocp.OrderedItems, *a)
 	}
@@ -923,7 +927,9 @@ func deleteFederatedPost(app *App, p *PublicPost, collID int64) error {
 		na.CC = []string{}
 		na.CC = append(na.CC, instFolls...)
 		da := activitystreams.NewDeleteActivity(na)
-		// Make the ID unique to ensure it works in Pleroma
+		// ActivityStreams 2.0 requires an id to identify exactly one
+		// object, and an activity is a distinct object from the one it
+		// wraps, so the two must not share an id.
 		// See: https://git.pleroma.social/pleroma/pleroma/issues/1481
 		da.ID += "#Delete"
 
@@ -995,8 +1001,26 @@ func federatePost(app *App, p *PublicPost, collID int64, isUpdate bool) error {
 			label = "Update"
 			na.Updated = &p.Updated
 			activity = activitystreams.NewUpdateActivity(na)
+			// ActivityStreams 2.0 requires an id to identify exactly one
+			// object, and an activity is a distinct object from the one
+			// it wraps, so the two must not share an id. Unlike
+			// Create, which happens once per post, Update happens on every
+			// edit, so a static suffix would give every edit's activity the
+			// same id as the first one. Receivers dedupe activities by id,
+			// so that would silently drop every edit after the first
+			// instead of fixing anything. Use the post's updated timestamp
+			// so each edit gets a distinct id.
+			updateTime := time.Now()
+			if na.Updated != nil && !na.Updated.IsZero() {
+				updateTime = *na.Updated
+			}
+			activity.ID += fmt.Sprintf("#Update/%d", updateTime.Unix())
 		} else {
 			activity = activitystreams.NewCreateActivity(na)
+			// ActivityStreams 2.0 requires an id to identify exactly one
+			// object, and an activity is a distinct object from the one it
+			// wraps, so the two must not share an id.
+			activity.ID += "#Create"
 			activity.To = na.To
 			activity.CC = na.CC
 		}
@@ -1018,6 +1042,10 @@ func federatePost(app *App, p *PublicPost, collID int64, isUpdate bool) error {
 	for _, tag := range na.Tag {
 		if tag.Type == "Mention" {
 			activity = activitystreams.NewCreateActivity(na)
+			// ActivityStreams 2.0 requires an id to identify exactly one
+			// object, and an activity is a distinct object from the one it
+			// wraps, so the two must not share an id.
+			activity.ID += "#Create"
 			activity.To = na.To
 			activity.CC = na.CC
 			// This here might be redundant in some cases as we might have already
