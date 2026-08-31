@@ -67,7 +67,11 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}
-          flavor: latest=true
+          # latest=auto applies the latest tag to semver releases only.
+          # With latest=true every push to develop claimed it, so the
+          # latest image tracked development rather than releases, and
+          # docker-compose.prod.yml defaults to latest.
+          flavor: latest=auto
 
       # Build and push Docker image with Buildx (don't push on PR)
       # https://github.com/docker/build-push-action
