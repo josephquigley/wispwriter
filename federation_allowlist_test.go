@@ -16,6 +16,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -153,6 +154,33 @@ func TestKeyCacheStoresAndExpires(t *testing.T) {
 	c.set("https://example.org/users/a#main-key", pub, -time.Minute)
 	_, found = c.get("https://example.org/users/a#main-key")
 	assert.False(t, found, "an expired entry must not be found")
+}
+
+func TestKeyCacheExpiredEntryIsDeletedNotJustReported(t *testing.T) {
+	c := newKeyCache()
+	pub := &testKey(t).PublicKey
+	c.set("https://example.org/users/a#main-key", pub, -time.Minute)
+
+	_, found := c.get("https://example.org/users/a#main-key")
+	assert.False(t, found)
+
+	c.mu.RLock()
+	_, stillThere := c.keys["https://example.org/users/a#main-key"]
+	c.mu.RUnlock()
+	assert.False(t, stillThere, "an expired entry must be removed from the map, not merely reported as a miss")
+}
+
+func TestKeyCacheDoesNotExceedLimit(t *testing.T) {
+	c := newKeyCache()
+	pub := &testKey(t).PublicKey
+	for i := 0; i < keyCacheLimit*2; i++ {
+		c.set(fmt.Sprintf("https://example.org/users/%d#main-key", i), pub, time.Minute)
+	}
+
+	c.mu.RLock()
+	n := len(c.keys)
+	c.mu.RUnlock()
+	assert.LessOrEqual(t, n, keyCacheLimit)
 }
 
 func TestKeyCacheRemembersFailure(t *testing.T) {

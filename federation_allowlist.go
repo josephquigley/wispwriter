@@ -89,23 +89,59 @@ func newKeyCache() *keyCache {
 	return &keyCache{keys: map[string]cachedKey{}}
 }
 
+// keyCacheLimit caps the number of entries a keyCache holds. allowlistedKey
+// is reached before a caller has proved possession of any private key: the
+// allowlist, date-window and signed-header checks that come before it in
+// verifyAllowlistedSignature all pass without a valid signature. An
+// unauthenticated caller who knows one allowlisted hostname can therefore
+// present an unbounded number of distinct keyIds on that host, so the cache
+// must not grow without bound in response.
+const keyCacheLimit = 1024
+
 // get returns the cached key for keyID. The second return value reports
 // whether a live entry exists: an entry that exists with a nil key records an
-// earlier failure and should not be retried yet.
+// earlier failure and should not be retried yet. An entry found to be
+// expired is removed, so expiry actually reclaims memory rather than merely
+// being reported as a miss forever.
 func (c *keyCache) get(keyID string) (*rsa.PublicKey, bool) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
 	e, ok := c.keys[keyID]
-	if !ok || time.Now().After(e.expires) {
+	c.mu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+	if time.Now().After(e.expires) {
+		c.mu.Lock()
+		// Re-check under the write lock: another goroutine may have
+		// already deleted or replaced this entry.
+		if cur, ok := c.keys[keyID]; ok && cur.expires.Equal(e.expires) {
+			delete(c.keys, keyID)
+		}
+		c.mu.Unlock()
 		return nil, false
 	}
 	return e.key, true
 }
 
 // set stores a key, or a nil key to record a failure, for the given duration.
+// If the cache is at keyCacheLimit, expired entries are evicted first to
+// make room; if it is still full after that, the new entry is dropped rather
+// than added, since keyCacheLimit exists specifically to bound the cost an
+// unauthenticated caller can impose.
 func (c *keyCache) set(keyID string, k *rsa.PublicKey, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if _, exists := c.keys[keyID]; !exists && len(c.keys) >= keyCacheLimit {
+		now := time.Now()
+		for id, e := range c.keys {
+			if now.After(e.expires) {
+				delete(c.keys, id)
+			}
+		}
+		if len(c.keys) >= keyCacheLimit {
+			return
+		}
+	}
 	c.keys[keyID] = cachedKey{key: k, expires: time.Now().Add(ttl)}
 }
 
