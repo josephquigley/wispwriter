@@ -6,11 +6,13 @@ name: Tests
 # do not carry this workflow and a plain pull_request trigger would never run
 # for them.
 #
-# The checkout resolves refs/pull/N/merge rather than the pull request head, so
-# each job tests the result of merging the branch into its base. Feature
-# branches are cut from upstream-mirror and can sit many commits behind, so
-# testing a branch in isolation would fail on problems that develop has already
-# fixed and that the branch never touched.
+# Each job checks out the base branch and merges the pull request branch into
+# it, so what runs is the merge result. Feature branches are cut from
+# upstream-mirror and can sit many commits behind, so testing a branch in
+# isolation would fail on problems that develop has already fixed and that the
+# branch never touched. The merge is done here rather than by checking out
+# refs/pull/N/merge because GitHub creates that ref lazily, so it is often
+# missing when the workflow starts and goes stale whenever the base moves.
 #
 # pull_request_target normally runs with the base repository's secrets, and the
 # checkout below deliberately builds the pull request's own code. That is only
@@ -38,7 +40,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+      - name: Merge the pull request branch
+        if: github.event_name == 'pull_request_target'
+        run: |
+          git fetch --no-tags origin "$HEAD_REF"
+          git -c user.name=ci -c user.email=ci@localhost \
+            merge --no-edit FETCH_HEAD
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -54,7 +64,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+      - name: Merge the pull request branch
+        if: github.event_name == 'pull_request_target'
+        run: |
+          git fetch --no-tags origin "$HEAD_REF"
+          git -c user.name=ci -c user.email=ci@localhost \
+            merge --no-edit FETCH_HEAD
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
