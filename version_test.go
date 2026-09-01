@@ -37,7 +37,7 @@ func TestSoftwareVersionIsSet(t *testing.T) {
 // which must keep identifying as plain WriteFreely to other machines.
 func TestForkIdentity(t *testing.T) {
 	assert.Equal(t, "WriteFreely (Wisp Edition)", serverSoftwareDisplay)
-	assert.Equal(t, serverSoftwareDisplay+" "+softwareVer, FormatVersion())
+	assert.Equal(t, serverSoftwareDisplay+" "+editionVersion(), FormatVersion())
 
 	// Machine-facing identity is deliberately unchanged: nodeinfo reports
 	// strings.ToLower(serverSoftware), and the User-Agent and Server header
@@ -45,4 +45,14 @@ func TestForkIdentity(t *testing.T) {
 	// different name would misreport to fediverse crawlers.
 	assert.Equal(t, "WriteFreely", serverSoftware)
 	assert.NotContains(t, serverSoftware, "(")
+}
+
+// TestEditionVersionCarriesForkMetadata pins the version string this build
+// reports to other machines. The suffix is SemVer build metadata, which is
+// ignored when comparing precedence, so a peer still reads this as the
+// upstream release the fork is based on.
+func TestEditionVersionCarriesForkMetadata(t *testing.T) {
+	assert.Equal(t, softwareVer+"+wisp", editionVersion())
+	assert.Equal(t, serverSoftwareDisplay+" "+editionVersion(), FormatVersion())
+	assert.Contains(t, ServerUserAgent(""), serverSoftware+"/"+editionVersion())
 }
