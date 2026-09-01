@@ -88,9 +88,9 @@ func defaultPrivacyTitle() sql.NullString {
 
 func defaultAboutPage(cfg *config.Config) string {
 	if cfg.App.Federation {
-		return `_` + cfg.App.SiteName + `_ is an interconnected place for you to write and publish, powered by [WriteFreely (Wisp Edition)](https://github.com/josephquigley/wispwriter) and ActivityPub.`
+		return `_` + cfg.App.SiteName + `_ is an interconnected place for you to write and publish, powered by [WriteFreely (Wisp Edition)](https://github.com/josephquigley/writefreely-wisp) and ActivityPub.`
 	}
-	return `_` + cfg.App.SiteName + `_ is a place for you to write and publish, powered by [WriteFreely (Wisp Edition)](https://github.com/josephquigley/wispwriter).`
+	return `_` + cfg.App.SiteName + `_ is a place for you to write and publish, powered by [WriteFreely (Wisp Edition)](https://github.com/josephquigley/writefreely-wisp).`
 }
 
 func defaultContactPage(app *App) string {
@@ -106,7 +106,7 @@ You can also reach them here...`
 }
 
 func defaultPrivacyPolicy(cfg *config.Config) string {
-	return `[WriteFreely (Wisp Edition)](https://github.com/josephquigley/wispwriter), the software that powers this site, is built to enforce your right to privacy by default.
+	return `[WriteFreely (Wisp Edition)](https://github.com/josephquigley/writefreely-wisp), the software that powers this site, is built to enforce your right to privacy by default.
 
 It retains as little data about you as possible, not even requiring an email address to sign up. However, if you _do_ give us your email address, it is stored encrypted in our database. We salt and hash your account's password.
 

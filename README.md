@@ -1,6 +1,6 @@
 &nbsp;
 <p align="center">
-	<a href="https://github.com/josephquigley/wispwriter"><img src="https://writefreely.org/img/writefreely.svg" width="350px" alt="WriteFreely (Wisp Edition)" /></a>
+	<a href="https://github.com/josephquigley/writefreely-wisp"><img src="https://writefreely.org/img/writefreely.svg" width="350px" alt="WriteFreely (Wisp Edition)" /></a>
 </p>
 <hr />
 <p align="center">
@@ -10,7 +10,7 @@
 	<a href="https://github.com/writefreely/writefreely">
 		<img src="https://img.shields.io/badge/fork%20of-writefreely%2Fwritefreely-blue" alt="Fork of writefreely/writefreely" />
 	</a>
-	<a href="https://github.com/josephquigley/wispwriter/blob/develop/LICENSE">
+	<a href="https://github.com/josephquigley/writefreely-wisp/blob/develop/LICENSE">
 		<img src="https://img.shields.io/badge/license-AGPL--3.0-green" alt="AGPL-3.0" />
 	</a>
 </p>
@@ -47,7 +47,7 @@ the features this fork exists to provide.
 
 Rather than report something untrue, the check is disabled and the admin
 Updates page explains why. Watch
-[releases](https://github.com/josephquigley/wispwriter/releases) instead. See
+[releases](https://github.com/josephquigley/writefreely-wisp/releases) instead. See
 `updateChecksSupported` in `updates.go` to re-enable it once the check points
 at this fork's own releases.
 
@@ -88,8 +88,10 @@ WriteFreely deploys as a static binary on any platform and architecture that Go 
 This edition has no pre-built binaries yet. Build from source with `make build`, or run the published container image:
 
 ```
-ghcr.io/josephquigley/wispwriter:latest
+ghcr.io/josephquigley/writefreely-wisp:latest
 ```
+
+The repository and the image were previously named `wispwriter`. GitHub redirects the old repository URL, but the container registry does not move a package: images published before the rename stay at `ghcr.io/josephquigley/wispwriter` and receive no new tags. Point existing deployments at the new path.
 
 See [docs/docker.md](docs/docker.md) for the container setup. Upstream's
 [installation guide](https://writefreely.org/start) covers configuration, which
@@ -122,7 +124,7 @@ Start hacking on WriteFreely with our [developer setup guide](https://writefreel
 
 ## Contributing
 
-Issues and pull requests specific to this edition belong on [this repo](https://github.com/josephquigley/wispwriter/issues). Anything that is not specific to the fork is better raised upstream, where it helps everyone.
+Issues and pull requests specific to this edition belong on [this repo](https://github.com/josephquigley/writefreely-wisp/issues). Anything that is not specific to the fork is better raised upstream, where it helps everyone.
 
 Code here follows the upstream [Contributing Guide](https://github.com/writefreely/writefreely/blob/develop/CONTRIBUTING.md#contributing-to-writefreely), since features from this fork are offered upstream where they fit.
 
