@@ -12,19 +12,40 @@
 #   /usr/share/writefreely/{templates,static,pages}  read-only assets
 #   /data/                                           config, keys, database, uploads
 
-# ---------------------------------------------------------------- build ---
-FROM golang:1.25-alpine3.22 AS build
+# --------------------------------------------------------------- assets ---
+# The CSS and the prose bundle are architecture independent, so they are
+# built once on the builder's own platform rather than once per target
+# under emulation. Node crashes with an illegal instruction often enough
+# under qemu-user on linux/arm64 to fail the build outright, and even when
+# it survives, running npm install and webpack once per architecture costs
+# minutes for identical output.
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine3.22 AS assets
 
 RUN apk -U upgrade \
     && apk add --no-cache nodejs npm make g++ git \
     && npm install -g less less-plugin-clean-css
 
-WORKDIR /go/src/github.com/writefreely/writefreely
-
 # webpack 4 hashes with md4, which OpenSSL 3 refuses by default. Node's
 # own flag is what re-enables it: appending a legacy provider section to
 # /etc/ssl/openssl.cnf, as this file used to do, has no effect on Node.
 ENV NODE_OPTIONS=--openssl-legacy-provider
+
+WORKDIR /src
+COPY . .
+
+# less writes into static/css and webpack into static/js.
+RUN make ui
+
+# ---------------------------------------------------------------- build ---
+FROM golang:1.25-alpine3.22 AS build
+
+# gcc and musl-dev are for cgo, which the sqlite build tag needs. Node is
+# not installed here: the assets stage above builds everything that needs
+# it.
+RUN apk -U upgrade \
+    && apk add --no-cache make gcc musl-dev git
+
+WORKDIR /go/src/github.com/writefreely/writefreely
 
 # git describe cannot work in every build context (notably a git
 # worktree, whose .git is a file pointing outside the context), and CI
@@ -39,7 +60,10 @@ RUN go mod download
 
 COPY . .
 
-RUN make build VERSION="$WRITEFREELY_VERSION" && make ui
+# Overwrites the checked-in static assets with the ones just built.
+COPY --from=assets /src/static ./static
+
+RUN make build VERSION="$WRITEFREELY_VERSION"
 
 # ------------------------------------------------------------- runtime ---
 FROM alpine:3.22
