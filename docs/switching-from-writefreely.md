@@ -73,7 +73,7 @@ and the keys in a named volume. This image works out of `/data`, where
 one directory holds the config, the keys, uploads, and the SQLite
 database if there is one.
 
-| | `writeas/writefreely` | `ghcr.io/josephquigley/wispwriter` |
+| | `writeas/writefreely` | `ghcr.io/josephquigley/writefreely-wisp` |
 |---|---|---|
 | Working directory | `/go` | `/data` |
 | Config | `/go/config.ini`, bind mounted file | `<state>/config.ini` |
@@ -92,7 +92,7 @@ docker run --rm -it \
     -v "$PWD:/workspace" -w /workspace \
     -v writefreely_web-keys:/keys-src:ro \
     --entrypoint switch-from-writefreely \
-    ghcr.io/josephquigley/wispwriter:latest --docker --keys-dir /keys-src
+    ghcr.io/josephquigley/writefreely-wisp:latest --docker --keys-dir /keys-src
 ```
 
 Replace `writefreely_web-keys` with your own volume, which
@@ -187,7 +187,7 @@ Then point the app service at the new image and the new mount:
 
 ```yaml
   writefreely-web:
-    image: ghcr.io/josephquigley/wispwriter:latest
+    image: ghcr.io/josephquigley/writefreely-wisp:latest
     user: "${PUID:-1000}:${PGID:-1000}"
     volumes:
       - ./data:/data

@@ -21,7 +21,7 @@ services:
   app:
     # Override WRITEFREELY_IMAGE in .env to pin a release tag instead of
     # tracking latest.
-    image: ${WRITEFREELY_IMAGE:-ghcr.io/josephquigley/wispwriter:latest}
+    image: ${WRITEFREELY_IMAGE:-ghcr.io/josephquigley/writefreely-wisp:latest}
 
     # Run as the host user, so the bind mount below needs no chown. The
     # image defaults to uid 1000; override in .env when yours differs.

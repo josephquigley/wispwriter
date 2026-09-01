@@ -68,7 +68,7 @@ RUN make build VERSION="$WRITEFREELY_VERSION"
 # ------------------------------------------------------------- runtime ---
 FROM alpine:3.22
 
-LABEL org.opencontainers.image.source="https://github.com/josephquigley/wispwriter"
+LABEL org.opencontainers.image.source="https://github.com/josephquigley/writefreely-wisp"
 LABEL org.opencontainers.image.title="WriteFreely (Wisp Edition)"
 LABEL org.opencontainers.image.description="WriteFreely (Wisp Edition) is a fork of WriteFreely, a clean, minimalist publishing platform made for writers. This edition adds post management, image uploads, multiple verification links, reorderable pinned posts, and subscribe button options."
 LABEL org.opencontainers.image.licenses="AGPL-3.0"
