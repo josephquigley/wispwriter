@@ -122,6 +122,22 @@ Read our full [documentation on WriteFreely.org](https://writefreely.org/docs) &
 
 Start hacking on WriteFreely with our [developer setup guide](https://writefreely.org/docs/latest/developer/setup). For Docker support, see [docs/docker.md](docs/docker.md) in this repository, or our [Docker guide](https://writefreely.org/docs/latest/admin/docker).
 
+## Releases
+
+Releases are cut by pull request, so the same CI that gates feature work gates them.
+
+```
+make bump-patch        # or bump-minor, bump-major, or bump VERSION=x.y.z
+git push -u origin release/<version>
+gh pr create --base main --title 'Release <version>'
+```
+
+`bump` writes the version into `app.go` and commits it on a `release/<version>` branch. Nothing is tagged locally. Merging the pull request into `main` is what releases: a version on `main` with no matching tag is a release, so the workflow tags it, publishes the GitHub Release, and retags the image that the branch build already published. That check makes it idempotent, so a merge that does not change the version publishes nothing.
+
+Put anything an operator has to *do* (migrations, new config keys, rebuild steps) in the pull request body. It becomes the top of the release notes, with the generated list of changes underneath it.
+
+Versions carry `+wisp` as SemVer build metadata, so `0.17.3+wisp` is this fork's build of an upstream `0.17.3` line and compares equal to it rather than older. Tags read `v0.17.3+wisp`, which is also why they never collide with the upstream tags this repository inherits. Image tags cannot contain `+`, so the image for that release is tagged `0.17.3-wisp`.
+
 ## Contributing
 
 Issues and pull requests specific to this edition belong on [this repo](https://github.com/josephquigley/writefreely-wisp/issues). Anything that is not specific to the fork is better raised upstream, where it helps everyone.
