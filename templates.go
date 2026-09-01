@@ -153,6 +153,9 @@ func InitTemplates(cfg *config.Config) error {
 	pagesPath := filepath.Join(cfg.Server.PagesParentDir, pagesDir)
 	err = filepath.Walk(pagesPath, func(path string, i os.FileInfo, err error) error {
 		if err != nil {
+			if path == pagesPath {
+				return assetPathError(pagesPath, "pages_parent_dir", err)
+			}
 			return err
 		}
 		if !i.IsDir() && !strings.HasPrefix(i.Name(), ".") {
@@ -163,14 +166,17 @@ func InitTemplates(cfg *config.Config) error {
 		return nil
 	})
 	if err != nil {
-		return assetPathError(pagesPath, "pages_parent_dir", err)
+		return err
 	}
 
 	log.Info("Loading user pages...")
 	// Initialize all user pages that use base templates
-	userTemplatesPath := filepath.Join(cfg.Server.TemplatesParentDir, templatesDir, "user")
-	err = filepath.Walk(userTemplatesPath, func(path string, f os.FileInfo, err error) error {
+	userPath := filepath.Join(cfg.Server.TemplatesParentDir, templatesDir, "user")
+	err = filepath.Walk(userPath, func(path string, f os.FileInfo, err error) error {
 		if err != nil {
+			if path == userPath {
+				return assetPathError(userPath, "templates_parent_dir", err)
+			}
 			return err
 		}
 		if !f.IsDir() && !strings.HasPrefix(f.Name(), ".") {
@@ -189,7 +195,7 @@ func InitTemplates(cfg *config.Config) error {
 		return nil
 	})
 	if err != nil {
-		return assetPathError(userTemplatesPath, "templates_parent_dir", err)
+		return err
 	}
 
 	return nil
