@@ -96,3 +96,38 @@ jobs:
       # style and not worth ~300 changes to satisfy a linter.
       - name: go vet
         run: go vet -composites=false ./...
+
+  image:
+    name: image
+    # The multi-architecture image build is slow and is only worth gating
+    # releases on, so it is limited to pull requests into main and to
+    # pushes to main. Day to day work lands on develop.
+    if: (github.event.pull_request.base.ref || github.ref_name) == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          fetch-depth: 0
+      - name: Merge the pull request branch
+        if: github.event_name == 'pull_request_target'
+        run: |
+          git fetch --no-tags origin "$HEAD_REF"
+          git -c user.name=ci -c user.email=ci@localhost \
+            merge --no-edit FETCH_HEAD
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      - uses: docker/setup-qemu-action@v4.0.0
+      - uses: docker/setup-buildx-action@v4.2.0
+      # Build only. Publishing is docker-publish.yml's job, and this
+      # workflow runs pull request code, so it must never push an image
+      # or touch the registry credentials.
+      - uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          build-args: |
+            WRITEFREELY_VERSION=ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
