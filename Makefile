@@ -1,21 +1,15 @@
-# Version reported by the binary, in preference order: an explicit
-# VERSION=, the current git description, or the default compiled into
-# app.go. When none of the first two are available the version is left
-# alone rather than overridden with an empty string. `git describe` fails
-# whenever the build context has no usable git repository, which includes
-# a container build from a git worktree or a shallow CI checkout, and that
-# produced binaries reporting a bare "v".
+# Version reported by the binary: an explicit VERSION=, or the constant in
+# app.go. The constant is the source of truth rather than `git describe`,
+# because this repository carries every upstream tag, so a description here
+# names an upstream release the build may have nothing to do with. The
+# binary appends "+wisp" itself, so what is passed is the bare number.
 VERSION ?=
-GITREV := $(shell git describe --tags 2>/dev/null | cut -c 2-)
-VERSTR := $(if $(VERSION),$(VERSION),$(GITREV))
+DEFAULTVER := $(shell sed -n 's/^[[:space:]]*softwareVer = "\(.*\)"/\1/p' app.go)
+VERSTR := $(if $(VERSION),$(VERSION),$(DEFAULTVER))
 VERFLAG := $(if $(VERSTR),-X 'github.com/writefreely/writefreely.softwareVer=$(VERSTR)',)
 
-# Release archives are named after the version, so they need a value even
-# when neither VERSION nor git can supply one. Fall back to the constant
-# the binary itself would report, which keeps the file name meaningful
-# rather than producing writefreely__linux_amd64.tar.gz.
-DEFAULTVER := $(shell sed -n 's/^[[:space:]]*softwareVer = "\(.*\)"/\1/p' app.go)
-ARCHIVEVER := $(if $(VERSTR),$(VERSTR),$(DEFAULTVER))
+# Release archives are named after the version.
+ARCHIVEVER := $(VERSTR)
 
 LDFLAGS=-ldflags="-s -w $(VERFLAG) -extldflags '-static'"
 BASELDFLAGS=-ldflags="-s -w $(VERFLAG)"
@@ -87,9 +81,9 @@ build-arm64: deps
 build-docker :
 	$(DOCKERCMD) build --build-arg WRITEFREELY_VERSION=$(VERSTR) -t $(IMAGE_NAME):latest $(if $(VERSTR),-t $(IMAGE_NAME):$(VERSTR),) .
 
-# Bump the version compiled into the binary, commit it and tag it, so the
-# tag and the constant can never disagree. The tag is what CI turns into
-# published image tags.
+# Prepare a release: bump the version compiled into the binary and commit
+# it. The release itself is the pull request into main, so the same CI that
+# gates feature work gates it.
 #
 #   make bump VERSION=0.18.1
 #   make bump-patch     0.17.2 -> 0.17.3
@@ -99,30 +93,39 @@ build-docker :
 # Named bump rather than release because release already builds the
 # cross-compiled binary tarballs.
 #
-# Releases are cut on main, so this refuses to run anywhere else. It
-# commits and tags, and a tag left on the wrong commit is the part that is
-# painful to undo.
+# The branch this runs on does not matter. What is released is whatever
+# version reaches main, read from app.go there, so the commit only has to
+# arrive through the usual pull request.
+#
+# Nothing here tags. Merging the pull request into main is what releases:
+# .github/workflows/wisp-release.yml sees a version on main with no tag,
+# tags it, publishes the GitHub Release and retags the image that was
+# already built. Tagging locally would put the tag on a commit CI has not
+# passed yet, and a tag on the wrong commit is the painful part to undo.
 bump:
-	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null); \
-		test "$$branch" = "main" || { echo "make bump must run on main, not $$branch"; exit 1; }
 	@if [ -z "$(VERSION)" ]; then echo "usage: make bump VERSION=x.y.z"; exit 1; fi
 	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "VERSION must look like x.y.z"; exit 1; }
 	@test -z "$$(git status --porcelain)" || { echo "working tree is dirty; commit or stash first"; exit 1; }
-	@if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null; then echo "tag v$(VERSION) already exists"; exit 1; fi
+	@if git rev-parse -q --verify "refs/tags/v$(VERSION)+wisp" >/dev/null; then echo "tag v$(VERSION)+wisp already exists"; exit 1; fi
 	@sed -i.relbak -E 's/^([[:space:]]*softwareVer = ")[^"]*(")/\1$(VERSION)\2/' app.go && rm -f app.go.relbak
 	@grep -q 'softwareVer = "$(VERSION)"' app.go || { echo "failed to update softwareVer in app.go"; exit 1; }
 	@gofmt -l app.go | grep -q . && { echo "app.go is not gofmt-clean after the edit"; exit 1; } || true
 	git add app.go
 	git commit -m "Release $(VERSION)"
-	git tag -a "v$(VERSION)" -m "Wisp Edition $(VERSION)"
 	@echo
-	@echo "Tagged v$(VERSION). Publish with:"
-	@echo "    git push origin HEAD --tags"
+	@echo "Committed. Release it with:"
+	@echo "    git push"
+	@echo "    gh pr create --base main --title 'Release $(VERSION)'"
+	@echo
+	@echo "Merging it publishes v$(VERSION)+wisp. Put anything an operator"
+	@echo "must do (migrations, new config keys) in the pull request body:"
+	@echo "it becomes the top of the release notes."
 
 # Derive the next version from the constant bump itself maintains, then
 # hand off to bump so its branch, tag and working tree checks all still
 # apply. app.go is the source of truth rather than `git describe`, because
-# bump writes the constant and the tag in one commit, so they cannot drift.
+# this repository carries every upstream tag and a description names an
+# upstream release rather than a release of this fork.
 bump-major:
 	@"$(MAKE)" bump VERSION=$$(echo "$(DEFAULTVER)" | awk -F. '{print $$1+1".0.0"}')
 
