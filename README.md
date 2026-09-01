@@ -127,12 +127,12 @@ Start hacking on WriteFreely with our [developer setup guide](https://writefreel
 Releases are cut by pull request, so the same CI that gates feature work gates them.
 
 ```
-make bump-patch        # or bump-minor, bump-major, or bump VERSION=x.y.z
-git push -u origin release/<version>
-gh pr create --base main --title 'Release <version>'
+make bump-patch                                   # branches, edits app.go, commits
+git push -u origin release/<version>              # you push it
+gh pr create --base main --title 'Release <version>'   # you open the pull request
 ```
 
-`bump` writes the version into `app.go` and commits it on a `release/<version>` branch. Nothing is tagged locally. Merging the pull request into `main` is what releases: a version on `main` with no matching tag is a release, so the workflow tags it, publishes the GitHub Release, and retags the image that the branch build already published. That check makes it idempotent, so a merge that does not change the version publishes nothing.
+`bump` does the first step only: it creates the `release/<version>` branch, writes the version into `app.go` and commits it. It stops before pushing, because the diff and the pull request into `main` are worth a look first. Nothing is tagged locally. Merging the pull request into `main` is what releases: a version on `main` with no matching tag is a release, so the workflow tags it, publishes the GitHub Release, and retags the image that the branch build already published. That check makes it idempotent, so a merge that does not change the version publishes nothing.
 
 Put anything an operator has to *do* (migrations, new config keys, rebuild steps) in the pull request body. It becomes the top of the release notes, with the generated list of changes underneath it.
 
