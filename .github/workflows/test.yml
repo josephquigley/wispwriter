@@ -129,5 +129,9 @@ jobs:
           push: false
           build-args: |
             WRITEFREELY_VERSION=ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # A scope of its own. docker-publish.yml also writes a type=gha
+          # cache, and with both on the default scope a pull request build
+          # running alongside a push build failed with "failed to reserve
+          # cache" when the two tried to reserve the same key.
+          cache-from: type=gha,scope=pr-image
+          cache-to: type=gha,mode=max,scope=pr-image
