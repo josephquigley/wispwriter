@@ -72,7 +72,7 @@ type (
 		Created    time.Time   `json:"created"`
 		Status     UserStatus  `json:"status"`
 
-		clearEmail string `json:"email"`
+		clearEmail string
 	}
 
 	userMeStats struct {

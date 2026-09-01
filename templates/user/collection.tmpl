@@ -43,7 +43,7 @@ textarea.section.norm {
 	<div class="option">
 		<h2><a name="preferred-url"></a>URL</h2>
 		<div class="section">
-			{{if eq .Alias .Username}}<p style="font-size: 0.8em">This blog uses your username in its URL{{if .Federation}} and fediverse handle{{end}}. You can change it in your <a href="/me/settings">Account Settings</a>.</p>{{end}}
+			{{if eq .Alias .UserPage.Username}}<p style="font-size: 0.8em">This blog uses your username in its URL{{if .Federation}} and fediverse handle{{end}}. You can change it in your <a href="/me/settings">Account Settings</a>.</p>{{end}}
 			<ul style="list-style:none">
 				<li>
 					{{.FriendlyHost}}/{{if not .SingleUser}}<strong>{{.Alias}}</strong>/{{end}}
@@ -128,6 +128,37 @@ textarea.section.norm {
 		</div>
 	</div>
 
+	{{/* Only meaningful once this blog has email subscriptions switched on
+	     in the Updates section above: with them off, neither placement
+	     renders whatever these are set to. */}}
+	{{if and .EmailCfg.Enabled .EmailSubsEnabled}}
+	<div class="option">
+		<h2>Subscribe form</h2>
+		<div class="section">
+			<p class="explain">Choose where readers are offered the email subscribe form.</p>
+			<ul style="list-style:none">
+				<!-- An unchecked checkbox submits nothing at all, which is
+				     indistinguishable from "field omitted" and would make these
+				     impossible to turn off. The hidden input guarantees a value
+				     is always submitted; the checkbox that follows it wins,
+				     because gorilla/schema keeps the last value for a field. -->
+				<li>
+					<input type="hidden" name="show_subscribe_index" value="false" />
+					<label class="option-text"><input type="checkbox" name="show_subscribe_index" value="true" {{if .ShowSubscribeIndex}}checked="checked"{{end}} />
+						Show the subscribe form on my blog's main page
+					</label>
+				</li>
+				<li>
+					<input type="hidden" name="show_subscribe_posts" value="false" />
+					<label class="option-text"><input type="checkbox" name="show_subscribe_posts" value="true" {{if .ShowSubscribePosts}}checked="checked"{{end}} />
+						Show the subscribe form at the end of each post
+					</label>
+				</li>
+			</ul>
+		</div>
+	</div>
+	{{end}}
+
 	<div class="option">
 		<h2>Display Format</h2>
 		<div class="section">
@@ -195,8 +226,22 @@ textarea.section.norm {
 		<h2>Verification</h2>
 		<div class="section">
 			<p class="explain">Verify that you own another site on the open web, fediverse, etc. For example, enter your Mastodon profile address here, then on Mastodon add a link back to this blog &mdash; it will show up as <a href="https://joinmastodon.org/verification" target="mastoverified">verified</a> there.</p>
-			<input type="text" name="verification_link" style="width:100%" value="{{.Verification}}" placeholder="https://writing.exchange/@writefreely" />
-			<p class="explain">This adds a <code>rel="me"</code> code in your blog's <code>&lt;head&gt;</code>.</p>
+			<div id="verification-links">
+				{{range .Verifications}}
+				<div class="verification-row">
+					<input type="text" name="verification_link_row" value="{{.}}" placeholder="https://writing.exchange/@writefreely" />
+					<button type="button" class="remove-verification" title="Remove this link" aria-label="Remove this link">&times;</button>
+				</div>
+				{{end}}
+				{{if not .Verifications}}
+				<div class="verification-row">
+					<input type="text" name="verification_link_row" value="" placeholder="https://writing.exchange/@writefreely" />
+					<button type="button" class="remove-verification" title="Remove this link" aria-label="Remove this link">&times;</button>
+				</div>
+				{{end}}
+			</div>
+			<button type="button" id="add-verification">Add another link</button>
+			<p class="explain">These add <code>rel="me"</code> codes in your blog's <code>&lt;head&gt;</code>. The first one is used as your blog's primary identity.</p>
 		</div>
 	</div>
 
@@ -237,6 +282,7 @@ textarea.section.norm {
 
 <script src="/js/h.js"></script>
 <script src="/js/modals.js"></script>
+<script src="/js/verification-rows.js"></script>
 <script src="/js/ace.js" type="text/javascript" charset="utf-8"></script>
 <script>
 H.getEl('cancel-delete').on('click', closeModals);

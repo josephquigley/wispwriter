@@ -1,0 +1,138 @@
+name: Tests
+
+# This workflow uses pull_request_target so that its definition is read from
+# the base branch rather than from the pull request. Feature branches here are
+# cut from upstream-mirror and must stay free of fork-specific files, so they
+# do not carry this workflow and a plain pull_request trigger would never run
+# for them.
+#
+# Each job checks out the base branch and merges the pull request branch into
+# it, so what runs is the merge result. Feature branches are cut from
+# upstream-mirror and can sit many commits behind, so testing a branch in
+# isolation would fail on problems that develop has already fixed and that the
+# branch never touched. The merge is done here rather than by checking out
+# refs/pull/N/merge because GitHub creates that ref lazily, so it is often
+# missing when the workflow starts and goes stale whenever the base moves.
+#
+# pull_request_target normally runs with the base repository's secrets, and the
+# checkout below deliberately builds the pull request's own code. That is only
+# safe because this repository takes branches from its own maintainers. The job
+# requests no secrets and only read access to contents. Do not add secrets to
+# this workflow, and reconsider the trigger before accepting pull requests from
+# outside forks.
+on:
+  pull_request_target:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          # The in-job merge below needs real history, not a depth 1 clone,
+          # or git refuses it as unrelated histories.
+          fetch-depth: 0
+      - name: Merge the pull request branch
+        if: github.event_name == 'pull_request_target'
+        run: |
+          git fetch --no-tags origin "$HEAD_REF"
+          git -c user.name=ci -c user.email=ci@localhost \
+            merge --no-edit FETCH_HEAD
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build ./...
+      # database-sqlite.go sits behind a build tag, so it is only compiled here.
+      - run: go build -tags sqlite ./...
+      - run: go test ./...
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          # The in-job merge below needs real history, not a depth 1 clone,
+          # or git refuses it as unrelated histories.
+          fetch-depth: 0
+      - name: Merge the pull request branch
+        if: github.event_name == 'pull_request_target'
+        run: |
+          git fetch --no-tags origin "$HEAD_REF"
+          git -c user.name=ci -c user.email=ci@localhost \
+            merge --no-edit FETCH_HEAD
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Not gofmt clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+      # composites is disabled because the codebase constructs
+      # impart.HTTPError with unkeyed fields throughout, which is upstream's
+      # style and not worth ~300 changes to satisfy a linter.
+      - name: go vet
+        run: go vet -composites=false ./...
+
+  image:
+    name: image
+    # The multi-architecture image build is slow and is only worth gating
+    # releases on, so it is limited to pull requests into main and to
+    # pushes to main. Day to day work lands on develop.
+    if: (github.event.pull_request.base.ref || github.ref_name) == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          fetch-depth: 0
+      - name: Merge the pull request branch
+        if: github.event_name == 'pull_request_target'
+        run: |
+          git fetch --no-tags origin "$HEAD_REF"
+          git -c user.name=ci -c user.email=ci@localhost \
+            merge --no-edit FETCH_HEAD
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      - uses: docker/setup-qemu-action@v4.0.0
+      - uses: docker/setup-buildx-action@v4.2.0
+      # Build only. Publishing is docker-publish.yml's job, and this
+      # workflow runs pull request code, so it must never push an image
+      # or touch the registry credentials.
+      - uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          build-args: |
+            WRITEFREELY_VERSION=ci
+          # Read the cache docker-publish.yml writes, but do not add to
+          # it. A multi-architecture mode=max export stores every
+          # intermediate layer, and with both workflows writing, the
+          # repository hit the 10 GB Actions cache limit and builds began
+          # failing with "failed to reserve cache". One writer is enough,
+          # and pull request builds still get most of the speedup.
+          cache-from: type=gha

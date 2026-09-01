@@ -52,15 +52,21 @@ const (
 	postsPerPage     = 10
 	postsPerArchPage = 40
 
+	// serverSoftware is the machine-readable software name, reported in the
+	// Server header and in nodeinfo. Fediverse crawlers parse it, so it stays
+	// as upstream sets it.
 	serverSoftware = "WriteFreely"
-	softwareURL    = "https://writefreely.org"
+	// serverSoftwareDisplay is the human-readable name shown to users. This
+	// fork brands itself as an edition so the upstream lineage stays visible.
+	serverSoftwareDisplay = "WriteFreely (Wisp Edition)"
+	softwareURL           = "https://writefreely.org"
 )
 
 var (
 	debugging bool
 
 	// Software version can be set from git env using -ldflags
-	softwareVer = "0.17.1"
+	softwareVer = "0.17.2"
 
 	// DEPRECATED VARS
 	isSingleUser bool
@@ -77,6 +83,12 @@ type App struct {
 	sessionStore sessions.Store
 	formDecoder  *schema.Decoder
 	updates      *updatesCache
+
+	// fedAllowlist holds the hostnames allowed to federate with this
+	// instance, parsed once from config. An empty map means no allowlist.
+	fedAllowlist map[string]bool
+	// fedKeys caches remote public keys used to verify incoming signatures.
+	fedKeys *keyCache
 
 	timeline *localTimeline
 }
@@ -152,6 +164,11 @@ func (app *App) LoadConfig() error {
 		return err
 	}
 	app.cfg = cfg
+	if err := app.initFederationAllowlist(); err != nil {
+		log.Error("Unable to load configuration: %v", err)
+		os.Exit(1)
+		return err
+	}
 	return nil
 }
 
@@ -406,6 +423,17 @@ var fileRegex = regexp.MustCompile("/([^/]*\\.[^/]*)$")
 func Initialize(apper Apper, debug bool) (*App, error) {
 	debugging = debug
 
+	// Ensure a configuration file exists first, for a nicer error message
+	if _, err := os.Stat(apper.App().cfgFile); os.IsNotExist(err) {
+		flagOpt := ""
+		loc := " yet"
+		if apper.App().cfgFile != config.FileName {
+			flagOpt = " -c " + apper.App().cfgFile
+			loc = " at " + apper.App().cfgFile
+		}
+		return nil, fmt.Errorf("No configuration file%s. To create, run:\n  writefreely%s config start", loc, flagOpt)
+	}
+
 	apper.LoadConfig()
 
 	// Load templates
@@ -438,6 +466,17 @@ func Initialize(apper Apper, debug bool) (*App, error) {
 		go startPublishJobsQueue(apper.App())
 	} else {
 		log.Info("[jobs] Not starting publish jobs queue: no email provider is configured.")
+	}
+
+	if apper.App().cfg.Uploads.Enabled {
+		// Fail here rather than at the moment someone uploads: a missing
+		// volume or a directory the process cannot write to is already
+		// true at startup, and an operator is watching now.
+		if err := apper.App().ensureUploadsWritable(); err != nil {
+			return nil, fmt.Errorf("uploads are enabled but unusable: %s", err)
+		}
+		log.Info("Starting orphaned image sweep...")
+		go startOrphanImageSweep(apper.App())
 	}
 
 	// Handle local timeline, if enabled
@@ -574,6 +613,9 @@ func (app *App) InitDecoder() {
 	// TODO: do this at the package level, instead of the App level
 	// Initialize modules
 	app.formDecoder = schema.NewDecoder()
+	// Ignore fields like the CSRF token that forms submit but that don't
+	// map to any decoded struct.
+	app.formDecoder.IgnoreUnknownKeys(true)
 	app.formDecoder.RegisterConverter(converter.NullJSONString{}, converter.ConvertJSONNullString)
 	app.formDecoder.RegisterConverter(converter.NullJSONBool{}, converter.ConvertJSONNullBool)
 	app.formDecoder.RegisterConverter(sql.NullString{}, converter.ConvertSQLNullString)
@@ -617,12 +659,23 @@ func ConnectToDatabase(app *App) error {
 		}
 	}
 
+	// Ensure the database schema is up-to-date
+	var dbVer int
+	err = app.db.QueryRow("SELECT MAX(version) FROM appmigrations").Scan(&dbVer)
+	if err != nil {
+		log.Error("Unable to read migrations version: %v", err)
+	} else if dbVer < migrations.CurrentVer() {
+		log.Info("+--------------------------------------------------------------------------+")
+		log.Info("| IMPORTANT! There are pending migrations (%d). Run: writefreely db migrate |", migrations.CurrentVer()-dbVer)
+		log.Info("+--------------------------------------------------------------------------+")
+	}
+
 	return nil
 }
 
 // FormatVersion constructs the version string for the application
 func FormatVersion() string {
-	return serverSoftware + " " + softwareVer
+	return serverSoftwareDisplay + " " + softwareVer
 }
 
 // OutputVersion prints out the version of the application.

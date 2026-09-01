@@ -125,7 +125,9 @@ func handleCreateEmailSubscription(app *App, w http.ResponseWriter, r *http.Requ
 	}
 
 	if ss.Web {
-		if u != nil && u.ID == c.OwnerID {
+		// On a single-user instance the blog is served at the site root, so
+		// the canonical URL we already have is the right place to go back to.
+		if u != nil && u.ID == c.OwnerID && !app.cfg.App.SingleUser {
 			from = "/" + c.Alias + "/"
 		}
 		from += ss.Slug
@@ -253,7 +255,9 @@ func handleDeleteEmailSubscription(app *App, w http.ResponseWriter, r *http.Requ
 		if u != nil {
 			// User is logged in
 			userID = u.ID
-			if userID == c.OwnerID {
+			// See the note in handleCreateEmailSubscription: on a
+			// single-user instance the blog is served at the site root.
+			if userID == c.OwnerID && !app.cfg.App.SingleUser {
 				from = "/" + c.Alias + "/"
 			}
 		}
@@ -346,7 +350,7 @@ Sent to %recipient.to%. Unsubscribe: ` + p.Collection.CanonicalURL() + `email/un
 	if err != nil {
 		return err
 	}
-	m, err := mlr.NewMessage(p.Collection.DisplayTitle()+" <"+p.Collection.Alias+"@"+app.cfg.Email.Domain+">", stripmd.Strip(p.DisplayTitle()), plainMsg)
+	m, err := mlr.NewMessage(mailer.FormatAddress(p.Collection.DisplayTitle(), p.Collection.Alias+"@"+app.cfg.Email.Domain), stripmd.Strip(p.DisplayTitle()), plainMsg)
 	if err != nil {
 		return err
 	}
@@ -488,7 +492,7 @@ func sendSubConfirmEmail(app *App, c *Collection, email, subID, token string) er
 ` + c.CanonicalURL() + "email/confirm/" + subID + "?t=" + token + `
 
 If you didn't subscribe to this site or you're not sure why you're getting this email, you can delete it. You won't be subscribed or receive any future emails.`
-	m, err := mlr.NewMessage(c.DisplayTitle()+" <"+c.Alias+"@"+app.cfg.Email.Domain+">", "Confirm your subscription to "+c.DisplayTitle(), plainMsg, fmt.Sprintf("<%s>", email))
+	m, err := mlr.NewMessage(mailer.FormatAddress(c.DisplayTitle(), c.Alias+"@"+app.cfg.Email.Domain), "Confirm your subscription to "+c.DisplayTitle(), plainMsg, fmt.Sprintf("<%s>", email))
 	if err != nil {
 		return err
 	}

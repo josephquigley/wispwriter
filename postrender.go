@@ -105,7 +105,7 @@ func (p *Post) augmentContent(c *Collection) {
 		return
 	}
 	// Add post signatures
-	if c.Signature != "" {
+	if c.Signature != "" && !strings.HasSuffix(strings.TrimSpace(p.Content), strings.TrimSpace(c.Signature)) {
 		p.Content += "\n\n" + c.Signature
 	}
 }
@@ -299,7 +299,7 @@ func postDescription(content, title, friendlyId string) string {
 	maxLen := 140
 
 	if content == "" {
-		content = "WriteFreely is a painless, simple, federated blogging platform."
+		content = "WriteFreely (Wisp Edition) is a painless, simple, federated blogging platform."
 	} else {
 		fmtStr := "%s"
 		truncation := 0

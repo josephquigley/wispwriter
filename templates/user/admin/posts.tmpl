@@ -1,0 +1,44 @@
+{{define "posts"}}
+{{template "header" .}}
+
+<div class="snug content-container">
+	{{template "admin-header" .}}
+
+	{{if .Flashes}}
+		<p class="alert success">
+		{{range .Flashes}}{{.}}{{end}}
+		</p>
+	{{end}}
+
+	{{if .Posts}}
+	<table class="classy export post-list" style="width:100%">
+		<thead>
+			<tr>
+				<th>Title</th>
+				<th>Blog</th>
+				<th>Date</th>
+				<th>State</th>
+				<th>Actions</th>
+			</tr>
+		</thead>
+		<tbody>
+			{{range .Posts}}{{template "post-row" (dict "Post" . "Alias" .Collection.Alias "ShowBlog" $.ShowBlog "SingleUser" $.SingleUser "Collections" $.Collections)}}{{end}}
+		</tbody>
+	</table>
+	{{else}}
+	<p>There are no posts on this instance yet.</p>
+	{{end}}
+
+	<nav class="pager pages">
+		{{range $n := .TotalPages}}<a href="/admin/posts{{if ne $n 1}}?p={{$n}}{{end}}" {{if eq $.CurrentPage $n}}class="selected"{{end}}>{{$n}}</a>{{end}}
+	</nav>
+
+	<div id="moving"></div>
+</div>
+
+<script src="/js/h.js"></script>
+<script src="/js/postactions.js"></script>
+<script src="/js/localdate.js"></script>
+{{template "post-list-actions" .}}
+{{template "footer" .}}
+{{end}}

@@ -50,7 +50,7 @@ func Configure(fname string, configSections string) (*SetupData, error) {
 
 	intro := color.New(color.Bold, color.FgWhite).PrintlnFunc()
 	fmt.Println()
-	intro("  ✍ WriteFreely Configuration ✍")
+	intro("  ✍ WriteFreely (Wisp Edition) Configuration ✍")
 	fmt.Println()
 	fmt.Println(wordwrap.WrapString("  This quick configuration process will "+action+" the application's config file, "+fname+".\n\n  It validates your input along the way, so you can be sure any future errors aren't caused by a bad configuration. If you'd rather configure your server manually, instead run: writefreely --create-config and edit that file.", 75))
 	fmt.Println()
@@ -155,13 +155,18 @@ func Configure(fname string, configSections string) (*SetupData, error) {
 		}
 
 		// If running in docker:
-		// 1. always bind to 0.0.0.0 instead of localhost
+		// 1. always bind to 0.0.0.0 instead of localhost, including in a
+		//    development environment -- a container bound to localhost is
+		//    unreachable from the host whatever the environment
 		// 2. set paths of static files in UNIX manners
-		if !isDevEnv && isDocker {
-			data.Config.Server.TemplatesParentDir = "/usr/share/writefreely"
-			data.Config.Server.StaticParentDir = "/usr/share/writefreely"
-			data.Config.Server.PagesParentDir = "/usr/share/writefreely"
+		if isDocker {
 			data.Config.Server.Bind = "0.0.0.0"
+		}
+		if !isDevEnv && isDocker {
+			parentDir := dockerAssetParentDir()
+			data.Config.Server.TemplatesParentDir = parentDir
+			data.Config.Server.StaticParentDir = parentDir
+			data.Config.Server.PagesParentDir = parentDir
 		}
 
 		fmt.Println()
@@ -391,17 +396,23 @@ func Configure(fname string, configSections string) (*SetupData, error) {
 			data.Config.App.Private = fedStatsType == "Private"
 		}
 
-		selPrompt = promptui.Select{
-			Templates: selTmpls,
-			Label:     "Automatically check for updates",
-			Items:     []string{"Yes", "No"},
-		}
-		_, updateCheckType, err := selPrompt.Run()
-		if err != nil {
-			return data, err
-		}
-		data.Config.App.UpdateChecks = updateCheckType == "Yes"
+		// Wisp Edition does not check for updates, so there is nothing to
+		// ask about here. See updateChecksSupported in updates.go.
+		data.Config.App.UpdateChecks = false
 	}
 
 	return data, Save(data.Config, fname)
+}
+
+// dockerAssetParentDir returns the directory holding the templates, static
+// and pages trees inside a container. Images do not agree on a layout --
+// one keeps the assets under /go, another under /usr/share/writefreely --
+// so the image declares its own via WRITEFREELY_DOCKER_PARENT_DIR, and the
+// historical location is the fallback for images that set only
+// WRITEFREELY_DOCKER.
+func dockerAssetParentDir() string {
+	if dir := os.Getenv("WRITEFREELY_DOCKER_PARENT_DIR"); dir != "" {
+		return dir
+	}
+	return "/usr/share/writefreely"
 }

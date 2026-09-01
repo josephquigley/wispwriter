@@ -12,12 +12,14 @@ package writefreely
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -118,7 +120,6 @@ func handleFetchCollectionActivities(app *App, w http.ResponseWriter, r *http.Re
 		alias = filepath.Base(r.RequestURI)
 	}
 
-	// TODO: enforce visibility
 	// Get base Collection data
 	var c *Collection
 	var err error
@@ -135,6 +136,9 @@ func handleFetchCollectionActivities(app *App, w http.ResponseWriter, r *http.Re
 	c.hostName = app.cfg.App.Host
 
 	if !c.IsInstanceColl() {
+		if c.IsPrivate() || c.IsProtected() {
+			return ErrCollectionNotFound
+		}
 		silenced, err := app.db.IsUserSilenced(c.OwnerID)
 		if err != nil {
 			log.Error("fetch collection activities: %v", err)
@@ -157,7 +161,6 @@ func handleFetchCollectionOutbox(app *App, w http.ResponseWriter, r *http.Reques
 	vars := mux.Vars(r)
 	alias := vars["alias"]
 
-	// TODO: enforce visibility
 	// Get base Collection data
 	var c *Collection
 	var err error
@@ -168,6 +171,9 @@ func handleFetchCollectionOutbox(app *App, w http.ResponseWriter, r *http.Reques
 	}
 	if err != nil {
 		return err
+	}
+	if c.IsPrivate() || c.IsProtected() {
+		return ErrCollectionNotFound
 	}
 	silenced, err := app.db.IsUserSilenced(c.OwnerID)
 	if err != nil {
@@ -206,6 +212,10 @@ func handleFetchCollectionOutbox(app *App, w http.ResponseWriter, r *http.Reques
 		pp.Collection = res
 		o := pp.ActivityObject(app)
 		a := activitystreams.NewCreateActivity(o)
+		// ActivityStreams 2.0 requires an id to identify exactly one
+		// object, and an activity is a distinct object from the one it
+		// wraps, so the two must not share an id.
+		a.ID += "#Create"
 		a.Context = nil
 		ocp.OrderedItems = append(ocp.OrderedItems, *a)
 	}
@@ -220,7 +230,6 @@ func handleFetchCollectionFollowers(app *App, w http.ResponseWriter, r *http.Req
 	vars := mux.Vars(r)
 	alias := vars["alias"]
 
-	// TODO: enforce visibility
 	// Get base Collection data
 	var c *Collection
 	var err error
@@ -231,6 +240,9 @@ func handleFetchCollectionFollowers(app *App, w http.ResponseWriter, r *http.Req
 	}
 	if err != nil {
 		return err
+	}
+	if c.IsPrivate() || c.IsProtected() {
+		return ErrCollectionNotFound
 	}
 	silenced, err := app.db.IsUserSilenced(c.OwnerID)
 	if err != nil {
@@ -275,7 +287,6 @@ func handleFetchCollectionFollowing(app *App, w http.ResponseWriter, r *http.Req
 	vars := mux.Vars(r)
 	alias := vars["alias"]
 
-	// TODO: enforce visibility
 	// Get base Collection data
 	var c *Collection
 	var err error
@@ -286,6 +297,9 @@ func handleFetchCollectionFollowing(app *App, w http.ResponseWriter, r *http.Req
 	}
 	if err != nil {
 		return err
+	}
+	if c.IsPrivate() || c.IsProtected() {
+		return ErrCollectionNotFound
 	}
 	silenced, err := app.db.IsUserSilenced(c.OwnerID)
 	if err != nil {
@@ -316,6 +330,12 @@ func handleFetchCollectionFollowing(app *App, w http.ResponseWriter, r *http.Req
 
 func handleFetchCollectionInbox(app *App, w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Server", serverSoftware)
+
+	if app.federationAllowlistActive() {
+		if err := app.verifyAllowlistedSignature(r); err != nil {
+			return err
+		}
+	}
 
 	vars := mux.Vars(r)
 	alias := vars["alias"]
@@ -655,7 +675,7 @@ func handleFetchCollectionInbox(app *App, w http.ResponseWriter, r *http.Request
 			logOutgoingActivity("Accept", am)
 		}
 
-		err = makeActivityPost(app.cfg.App.Host, p, fullActor.Inbox, am)
+		err = makeActivityPost(app, p, fullActor.Inbox, am)
 		if err != nil {
 			log.Error("Unable to make activity POST: %v", err)
 			return
@@ -737,11 +757,37 @@ func handleFetchCollectionInbox(app *App, w http.ResponseWriter, r *http.Request
 	return nil
 }
 
-func makeActivityPost(hostName string, p *activitystreams.Person, url string, m interface{}) error {
+// actorPrivKey returns the decoded private key for an actor, refusing an empty
+// key rather than handing it to DecodePrivateKey.
+//
+// web-core's DecodePrivateKey tests whether pem.Decode returned a nil block and
+// then dereferences that same nil block while formatting the error, so an actor
+// whose keypair was never generated panics its caller instead of receiving an
+// error. Key generation shells out to openssl and can genuinely fail, so an
+// actor without a keypair is a reachable state rather than a theoretical one.
+func actorPrivKey(p *activitystreams.Person) (crypto.PrivateKey, error) {
+	k := p.GetPrivKey()
+	if len(k) == 0 {
+		return nil, fmt.Errorf("actor %s has no private key: its ActivityPub keypair was never generated", p.ID)
+	}
+	return activitypub.DecodePrivateKey(k)
+}
+
+// makeActivityPost delivers an activity to a remote inbox. It is the single
+// point every outbound activity passes through, which is where the federation
+// allowlist is enforced: no delivery path can reach a host that is not on the
+// list.
+func makeActivityPost(app *App, p *activitystreams.Person, url string, m interface{}) error {
+	hostName := app.cfg.App.Host
+
+	if !app.inboxAllowed(url) {
+		return fmt.Errorf("refusing to post to %s: not on the federation allowlist", url)
+	}
+
 	if url == "" {
-        log.Error("Target POST URL is empty! Person: %+v, Activity: %+v", p, m)
-        return fmt.Errorf("target POST URL is empty")
-    }
+		log.Error("Target POST URL is empty! Person: %+v, Activity: %+v", p, m)
+		return fmt.Errorf("target POST URL is empty")
+	}
 
 	log.Info("POST %s", url)
 	b, err := json.Marshal(m)
@@ -757,7 +803,7 @@ func makeActivityPost(hostName string, p *activitystreams.Person, url string, m 
 	r.Header.Add("Digest", "SHA-256="+base64.StdEncoding.EncodeToString(h.Sum(nil)))
 
 	// Sign using the 'Signature' header
-	privKey, err := activitypub.DecodePrivateKey(p.GetPrivKey())
+	privKey, err := actorPrivKey(p)
 	if err != nil {
 		return err
 	}
@@ -796,8 +842,41 @@ func makeActivityPost(hostName string, p *activitystreams.Person, url string, m 
 	return nil
 }
 
+// isPublicIRI reports whether iri is an http(s) URL whose host resolves
+// exclusively to public, routable IP addresses. It rejects loopback,
+// private, link-local (including cloud metadata endpoints like
+// 169.254.169.254), and unspecified addresses to mitigate SSRF via
+// attacker-supplied ActivityPub IRIs (e.g. inbox actor/object fields).
+func isPublicIRI(iri string) error {
+	u, err := url.Parse(iri)
+	if err != nil {
+		return fmt.Errorf("invalid IRI: %v", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("unsupported IRI scheme %q", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("missing host in IRI")
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("unable to resolve host %q: %v", host, err)
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return fmt.Errorf("host %q resolves to disallowed address %s", host, ip)
+		}
+	}
+	return nil
+}
+
 func resolveIRI(hostName, url string) ([]byte, error) {
 	log.Info("GET %s", url)
+
+	if err := isPublicIRI(url); err != nil {
+		return nil, fmt.Errorf("refusing to fetch IRI: %v", err)
+	}
 
 	r, _ := http.NewRequest("GET", url, nil)
 	r.Header.Add("Accept", "application/activity+json")
@@ -809,7 +888,7 @@ func resolveIRI(hostName, url string) ([]byte, error) {
 	r.Header.Add("Digest", "SHA-256="+base64.StdEncoding.EncodeToString(h.Sum(nil)))
 
 	// Sign using the 'Signature' header
-	privKey, err := activitypub.DecodePrivateKey(p.GetPrivKey())
+	privKey, err := actorPrivKey(p)
 	if err != nil {
 		return nil, err
 	}
@@ -881,11 +960,13 @@ func deleteFederatedPost(app *App, p *PublicPost, collID int64) error {
 		na.CC = []string{}
 		na.CC = append(na.CC, instFolls...)
 		da := activitystreams.NewDeleteActivity(na)
-		// Make the ID unique to ensure it works in Pleroma
+		// ActivityStreams 2.0 requires an id to identify exactly one
+		// object, and an activity is a distinct object from the one it
+		// wraps, so the two must not share an id.
 		// See: https://git.pleroma.social/pleroma/pleroma/issues/1481
 		da.ID += "#Delete"
 
-		err = makeActivityPost(app.cfg.App.Host, actor, si, da)
+		err = makeActivityPost(app, actor, si, da)
 		if err != nil {
 			log.Error("Couldn't delete post! %v", err)
 		}
@@ -894,8 +975,10 @@ func deleteFederatedPost(app *App, p *PublicPost, collID int64) error {
 }
 
 func federatePost(app *App, p *PublicPost, collID int64, isUpdate bool) error {
-	// If app is private, do not federate
-	if app.cfg.App.Private {
+	// A private instance does not federate. With a federation allowlist
+	// configured it does, but only to the hosts on that list, which
+	// makeActivityPost enforces.
+	if app.cfg.App.Private && !app.federationAllowlistActive() {
 		return nil
 	}
 
@@ -953,8 +1036,26 @@ func federatePost(app *App, p *PublicPost, collID int64, isUpdate bool) error {
 			label = "Update"
 			na.Updated = &p.Updated
 			activity = activitystreams.NewUpdateActivity(na)
+			// ActivityStreams 2.0 requires an id to identify exactly one
+			// object, and an activity is a distinct object from the one
+			// it wraps, so the two must not share an id. Unlike
+			// Create, which happens once per post, Update happens on every
+			// edit, so a static suffix would give every edit's activity the
+			// same id as the first one. Receivers dedupe activities by id,
+			// so that would silently drop every edit after the first
+			// instead of fixing anything. Use the post's updated timestamp
+			// so each edit gets a distinct id.
+			updateTime := time.Now()
+			if na.Updated != nil && !na.Updated.IsZero() {
+				updateTime = *na.Updated
+			}
+			activity.ID += fmt.Sprintf("#Update/%d", updateTime.Unix())
 		} else {
 			activity = activitystreams.NewCreateActivity(na)
+			// ActivityStreams 2.0 requires an id to identify exactly one
+			// object, and an activity is a distinct object from the one it
+			// wraps, so the two must not share an id.
+			activity.ID += "#Create"
 			activity.To = na.To
 			activity.CC = na.CC
 		}
@@ -962,7 +1063,7 @@ func federatePost(app *App, p *PublicPost, collID int64, isUpdate bool) error {
 		if debugging {
 			logOutgoingActivity(label, activity)
 		}
-		err = makeActivityPost(app.cfg.App.Host, actor, si, activity)
+		err = makeActivityPost(app, actor, si, activity)
 		if err != nil {
 			log.Error("Couldn't post! %v", err)
 		}
@@ -976,6 +1077,10 @@ func federatePost(app *App, p *PublicPost, collID int64, isUpdate bool) error {
 	for _, tag := range na.Tag {
 		if tag.Type == "Mention" {
 			activity = activitystreams.NewCreateActivity(na)
+			// ActivityStreams 2.0 requires an id to identify exactly one
+			// object, and an activity is a distinct object from the one it
+			// wraps, so the two must not share an id.
+			activity.ID += "#Create"
 			activity.To = na.To
 			activity.CC = na.CC
 			// This here might be redundant in some cases as we might have already
@@ -988,7 +1093,7 @@ func federatePost(app *App, p *PublicPost, collID int64, isUpdate bool) error {
 				log.Error("Unable to find remote user %s. Skipping: %v", tag.HRef, err)
 				continue
 			}
-			err = makeActivityPost(app.cfg.App.Host, actor, remoteUser.Inbox, activity)
+			err = makeActivityPost(app, actor, remoteUser.Inbox, activity)
 			if err != nil {
 				log.Error("Couldn't post! %v", err)
 			}

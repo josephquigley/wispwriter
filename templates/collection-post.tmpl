@@ -57,7 +57,7 @@
 				{{ if and .IsOwner .IsFound }}<span class="views" dir="ltr"><strong>{{largeNumFmt .Views}}</strong> {{pluralize "view" "views" .Views}}</span>
                 {{if .Likes}}<span class="views" dir="ltr"><strong>{{largeNumFmt .Likes}}</strong> {{pluralize "like" "likes" .Likes}}</span>{{end}}
 				<a href="/{{if not .SingleUser}}{{.Collection.Alias}}/{{end}}{{.Slug.String}}/edit" dir="{{.Direction}}">Edit</a>
-				{{if .IsPinned}}<a class="xtra-feature unpin" href="/{{.Collection.Alias}}/{{.Slug.String}}/unpin" dir="{{.Direction}}" onclick="unpinPost(event, '{{.ID}}')">Unpin</a>{{end}}
+				{{if .IsPinned}}<a class="xtra-feature unpin" href="/{{if not .SingleUser}}{{.Collection.Alias}}/{{end}}{{.Slug.String}}/unpin" dir="{{.Direction}}" onclick="unpinPost(event, '{{.ID}}')">Unpin</a>{{end}}
 				{{ end }}
 			</nav>
 		</header>
@@ -66,6 +66,8 @@
 			{{template "user-silenced"}}
 		{{end}}
 		<article id="post-body" class="{{.Font}} h-entry {{if not .IsFound}}error-page{{end}}">{{if .IsScheduled}}<p class="badge">Scheduled</p>{{end}}{{if .Title.String}}<h2 id="title" class="p-name{{if and $.Collection.Format.ShowDates (not .IsPinned)}} dated{{end}}">{{.FormattedDisplayTitle}}</h2>{{end}}{{if and $.Collection.Format.ShowDates (not .IsPinned) .IsFound}}<time class="dt-published" datetime="{{.Created8601}}" pubdate itemprop="datePublished" content="{{.Created}}">{{.DisplayDate}}</time>{{end}}<div class="e-content">{{.HTMLContent}}</div></article>
+
+		{{if .ShowSubscribePosts}}{{template "emailsubscribe" .}}{{end}}
 
 		{{ if .Collection.ShowFooterBranding }}
 		<footer dir="ltr"><hr><nav><p style="font-size: 0.9em">{{localhtml "published with write.as" .Language.String}}</p></nav></footer>

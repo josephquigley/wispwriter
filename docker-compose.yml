@@ -1,47 +1,123 @@
-version: "3"
+# Development / evaluation stack.
+#
+# Before the first run:
+#   cp .env.example .env      and edit the passwords
+#   mkdir -p data dbdata
+#   docker compose up -d --build
+#   docker compose run --rm app writefreely --config
+#   docker compose up -d
+#   docker compose exec app writefreely --create-admin youruser:yourpassword
+#
+# Mail is caught by Mailpit rather than delivered. Read it at
+# http://localhost:8025 and see docs/docker.md for the config.ini block.
+#
+# See docs/docker.md for the full walkthrough.
 
-volumes:
-  web-keys:
-  db-data:
+name: writefreely-dev
 
 networks:
-  external_writefreely:
-  internal_writefreely:
+  external:
+  internal:
     internal: true
 
 services:
-  writefreely-web:
-    container_name: "writefreely-web"
-    image: "writeas/writefreely:latest"
+  app:
+    # Built from this checkout rather than pulled. The mount path below is
+    # the image's own layout, so a published tag that predates a change to
+    # that layout would leave this file mounting a config the app never
+    # reads. Building here keeps the two in step.
+    build:
+      context: .
+      args:
+        WRITEFREELY_VERSION: ${WRITEFREELY_VERSION:-}
+    image: writefreely:dev
 
+    # Run as the host user, so the bind mount below needs no chown. The
+    # image defaults to uid 1000; override in .env when yours differs.
+    user: "${PUID:-1000}:${PGID:-1000}"
+
+    # One directory holds config, keys, the database if SQLite is used,
+    # and uploads.
     volumes:
-      - "web-keys:/go/keys"
-      - "./config.ini:/go/config.ini"
+      - ./data:/data
 
     networks:
-      - "internal_writefreely"
-      - "external_writefreely"
+      - internal
+      - external
 
     ports:
       - "8080:8080"
 
     depends_on:
-      - "writefreely-db"
+      db:
+        # Wait for the database to accept connections. A plain depends_on
+        # only waits for the container to start, so the app would come up
+        # first and fail its initial connection.
+        condition: service_healthy
+      mailpit:
+        condition: service_started
 
     restart: unless-stopped
 
-  writefreely-db:
-    container_name: "writefreely-db"
-    image: "mariadb:latest"
+  db:
+    # LinuxServer's image, matching docker-compose.prod.yml so both stacks
+    # behave the same way. Its data directory is /config/databases, not
+    # /var/lib/mysql -- the mount point below is the image's, not MariaDB's.
+    #
+    # No command: override here. This image boots through s6 init, which
+    # expects to invoke the server itself, and it already defaults to
+    # utf8mb4 / utf8mb4_general_ci. Server tuning goes in
+    # /config/custom.cnf, which the image creates on first start.
+    image: "lscr.io/linuxserver/mariadb:11.4.5"
 
+    # Deliberately NOT ./db: this repository already contains a Go package
+    # at db/, and mounting over it writes MariaDB's state into the source
+    # tree.
     volumes:
-      - "db-data:/var/lib/mysql/data"
+      - ./dbdata:/config
 
     networks:
-      - "internal_writefreely"
+      - internal
 
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Etc/UTC}
       - MYSQL_DATABASE=writefreely
-      - MYSQL_ROOT_PASSWORD=changeme
+      - MYSQL_USER=writefreely
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+
+    # This image ships mariadb-admin, not the official image's
+    # healthcheck.sh.
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u writefreely -p\"$$MYSQL_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
+    restart: unless-stopped
+
+  mailpit:
+    # Catches everything the app sends instead of delivering it. Nothing
+    # here leaves the machine, so password resets and invites can be
+    # exercised without a real provider.
+    image: axllent/mailpit:v1.28
+
+    environment:
+      # WriteFreely only builds an SMTP mailer when a username and password
+      # are both set, so it always authenticates. Accept whatever it sends,
+      # over an unencrypted connection on an internal network.
+      - MP_SMTP_AUTH_ACCEPT_ANY=true
+      - MP_SMTP_AUTH_ALLOW_INSECURE=true
+
+    networks:
+      - internal
+      - external
+
+    ports:
+      # Web UI only. SMTP stays on the internal network.
+      - "127.0.0.1:8025:8025"
 
     restart: unless-stopped

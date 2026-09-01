@@ -46,14 +46,17 @@ require (
 	github.com/writeas/import v0.2.1
 	github.com/writeas/monday v1.3.0
 	github.com/writeas/saturday v1.7.2-0.20200427193424-392b95a03320
-	github.com/writeas/web-core v1.7.0
+	github.com/writeas/web-core v1.8.0
 	github.com/writefreely/go-gopher v0.0.0-20220429181814-40127126f83b
 	github.com/writefreely/go-nodeinfo v1.2.0
-	golang.org/x/crypto v0.53.0
-	golang.org/x/net v0.56.0
+	golang.org/x/crypto v0.54.0
+	golang.org/x/net v0.57.0
 )
 
-require github.com/xhit/go-simple-mail/v2 v2.16.0
+require (
+	github.com/go-fed/httpsig v0.1.1-0.20200204213531-0ef28562fabe
+	github.com/xhit/go-simple-mail/v2 v2.16.0
+)
 
 require (
 	code.as/core/socks v1.0.0 // indirect
@@ -66,7 +69,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/uniuri v0.0.0-20200228104902-7aecb25e1fe5 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
-	github.com/go-fed/httpsig v0.1.1-0.20200204213531-0ef28562fabe // indirect
 	github.com/gofrs/uuid v3.3.0+incompatible // indirect
 	github.com/gologme/log v1.2.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
@@ -89,8 +91,8 @@ require (
 	github.com/writeas/openssl-go v1.0.0 // indirect
 	github.com/writeas/slug v1.2.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	gopkg.in/ini.v1 v1.62.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

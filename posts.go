@@ -38,6 +38,7 @@ import (
 	"github.com/writeas/web-core/tags"
 	"github.com/writefreely/writefreely/page"
 	"github.com/writefreely/writefreely/parse"
+	"github.com/writefreely/writefreely/spam"
 )
 
 const (
@@ -151,12 +152,31 @@ type (
 		IsCustomDomain  bool
 		Monetization    string
 		Verification    string
+		Verifications   []string
 		FediverseAuthor string
 		PinnedPosts     *[]PublicPost
 		IsFound         bool
 		IsAdmin         bool
 		CanInvite       bool
 		Silenced        bool
+
+		// Fields read by the shared "emailsubscribe" template block, which
+		// was written for the blog index and reaches them there through the
+		// embedded Collection. A post page's data has the collection in a
+		// named field instead, so they're repeated at the top level here.
+		//
+		// Alias is the blog's alias.
+		Alias string
+		// EmailSubsEnabled reports whether this blog is accepting email
+		// subscriptions.
+		EmailSubsEnabled bool
+		// IsSubscriber reports whether the viewer is already subscribed.
+		IsSubscriber bool
+		// Honeypot is the name of the spam-trap form field.
+		Honeypot string
+		// ShowSubscribePosts mirrors the blog's own setting, deciding
+		// whether the subscribe form renders at the end of this page.
+		ShowSubscribePosts bool
 
 		// Helper field for Chorus mode
 		CollAlias string
@@ -219,11 +239,11 @@ func (p *Post) DisplayTitle() string {
 	return t
 }
 
-// PlainDisplayTitle strips away Markdown from the generated Post's title (if
-// any), for use in places like RSS feeds and ActivityStreams objects, where
-// the raw Markdown would be unwanted.
+// PlainDisplayTitle strips away Markdown and HTML from the generated Post's
+// title (if any), for use in places like RSS feeds and ActivityStreams objects,
+// where only plain text is wanted.
 func (p *Post) PlainDisplayTitle() string {
-	if t := stripmd.Strip(p.DisplayTitle()); t != "" {
+	if t := stripmd.Strip(stripHTMLWithoutEscaping(p.DisplayTitle())); t != "" {
 		return t
 	}
 	return p.ID
@@ -301,6 +321,18 @@ func (p *Post) HasTitleLink() bool {
 	}
 	hasLink, _ := regexp.MatchString(`([^!]+|^)\[.+\]\(.+\)`, p.Title.String)
 	return hasLink
+}
+
+// UserPage provides the fields expected by the shared "user-navigation"
+// template, which otherwise assumes it's rendering for a page that embeds
+// *UserPage (e.g. the "me" backend pages).
+func (c CollectionPostPage) UserPage() *UserPage {
+	return &UserPage{
+		StaticPage: c.StaticPage,
+		IsAdmin:    c.IsAdmin,
+		CanInvite:  c.CanInvite,
+		CollAlias:  c.CollAlias,
+	}
 }
 
 func (c CollectionPostPage) DisplayMonetization() string {
@@ -670,6 +702,9 @@ func newPost(app *App, w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if p.Content != nil {
+		attachPostImages(app, userID, newPost.ID, *p.Content)
+	}
 	if coll != nil {
 		coll.ForPublic()
 		newPost.Collection = &CollectionObj{Collection: *coll}
@@ -683,7 +718,7 @@ func newPost(app *App, w http.ResponseWriter, r *http.Request) error {
 	response := impart.WriteSuccess(w, newPost, http.StatusCreated)
 
 	if newPost.Collection != nil {
-		if !app.cfg.App.Private && app.cfg.App.Federation && !newPost.Created.After(time.Now()) {
+		if app.federationOutboundEnabled() && app.cfg.App.Federation && !newPost.Created.After(time.Now()) {
 			go federatePost(app, newPost, newPost.Collection.ID, false)
 		}
 		if app.cfg.Email.Enabled() && newPost.Collection.EmailSubsEnabled() {
@@ -788,6 +823,10 @@ func existingPost(app *App, w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	if p.SubmittedPost.Content != nil {
+		attachPostImages(app, userID, p.ID, *p.SubmittedPost.Content)
+	}
+
 	var pRes *PublicPost
 	pRes, err = app.db.GetPost(p.ID, 0)
 	if reqJSON {
@@ -799,7 +838,7 @@ func existingPost(app *App, w http.ResponseWriter, r *http.Request) error {
 
 	if pRes.CollectionID.Valid {
 		coll, err := app.db.GetCollectionBy("id = ?", pRes.CollectionID.Int64)
-		if err == nil && !app.cfg.App.Private && app.cfg.App.Federation {
+		if err == nil && app.federationOutboundEnabled() && app.cfg.App.Federation {
 			coll.hostName = app.cfg.App.Host
 			pRes.Collection = &CollectionObj{Collection: *coll}
 			go federatePost(app, pRes, pRes.Collection.ID, true)
@@ -940,9 +979,12 @@ func deletePost(app *App, w http.ResponseWriter, r *http.Request) error {
 	if t != nil {
 		t.Commit()
 	}
-	if coll != nil && !app.cfg.App.Private && app.cfg.App.Federation {
+	if coll != nil && app.federationOutboundEnabled() && app.cfg.App.Federation {
 		go deleteFederatedPost(app, pp, collID.Int64)
 	}
+
+	// The post is gone, so a cleanup failure mustn't fail the delete.
+	cleanUpPostImages(app, friendlyID)
 
 	return impart.HTTPError{Status: http.StatusNoContent}
 }
@@ -996,7 +1038,7 @@ func addPost(app *App, w http.ResponseWriter, r *http.Request) error {
 		if pRes.Code != http.StatusOK {
 			continue
 		}
-		if !app.cfg.App.Private && app.cfg.App.Federation {
+		if app.federationOutboundEnabled() && app.cfg.App.Federation {
 			if !pRes.Post.Created.After(time.Now()) {
 				pRes.Post.Collection.hostName = app.cfg.App.Host
 				go federatePost(app, pRes.Post, pRes.Post.Collection.ID, false)
@@ -1113,7 +1155,11 @@ func pinPost(app *App, w http.ResponseWriter, r *http.Request) error {
 		err = app.db.UpdatePostPinState(isPinning, p.ID, coll.ID, userID, p.Position)
 		ppr := PinPostResult{ID: p.ID}
 		if err != nil {
-			ppr.Code = http.StatusInternalServerError
+			if err == ErrForbiddenCollection {
+				ppr.Code = http.StatusForbidden
+			} else {
+				ppr.Code = http.StatusInternalServerError
+			}
 			// TODO: set error message
 		} else {
 			ppr.Code = http.StatusOK
@@ -1274,8 +1320,13 @@ func (p *PublicPost) ActivityObject(app *App) *activitystreams.Object {
 		}
 	}
 	if len(p.Images) > 0 {
+		altText := extractImageAltText(p.Content)
 		for _, i := range p.Images {
-			o.Attachment = append(o.Attachment, activitystreams.NewImageAttachment(i))
+			img := activitystreams.NewImageAttachment(i)
+			if alt, ok := altText[i]; ok {
+				img.Name = alt
+			}
+			o.Attachment = append(o.Attachment, img)
 		}
 	}
 	// Find mentioned users
@@ -1653,16 +1704,24 @@ Are you sure it was ever here?` + shortCodeNoSig,
 		}
 		tp.IsAdmin = u != nil && u.IsAdmin()
 		tp.CanInvite = canUserInvite(app.cfg, tp.IsAdmin)
+		tp.Alias = c.Alias
+		tp.Honeypot = spam.HoneypotFieldName()
+		tp.EmailSubsEnabled = app.cfg.Email.Enabled() && c.EmailSubsEnabled()
+		tp.ShowSubscribePosts = c.ShowSubscribePosts
+		if u != nil {
+			tp.IsSubscriber = u.IsEmailSubscriber(app, c.ID)
+		}
 		tp.PinnedPosts, _ = app.db.GetPinnedPosts(coll, p.IsOwner)
 		tp.IsPinned = len(*tp.PinnedPosts) > 0 && PostsContains(tp.PinnedPosts, p)
 		tp.Monetization = coll.Monetization
-		tp.Verification = coll.Verification
+		tp.Verification = coll.Verification()
+		tp.Verifications = coll.Verifications
 		if tp.Verification != "" {
 			// Fetch info for fediverse:creator tag
-			ru, err := getRemoteUserFromURL(app, coll.Verification)
+			ru, err := getRemoteUserFromURL(app, tp.Verification)
 			if err != nil {
 				if debugging {
-					log.Info("showing rel=me tag, but no local handle for %s", coll.Verification)
+					log.Info("showing rel=me tag, but no local handle for %s", tp.Verification)
 				}
 			} else {
 				// Though we don't store handles with leading @, strip it here just in case
@@ -1739,10 +1798,27 @@ func (rp *RawPost) Updated8601() string {
 	return rp.Updated.Format("2006-01-02T15:04:05Z")
 }
 
-var imageURLRegex = regexp.MustCompile(`(?i)[^ ]+\.(gif|png|jpg|jpeg|avif|avifs|webp|jxl|image)$`)
+var (
+	imageURLRegex      = regexp.MustCompile(`(?i)[^ ]+\.(gif|png|jpg|jpeg|avif|avifs|webp|jxl|image)$`)
+	imageMarkdownRegex = regexp.MustCompile(`!\[([^\]]*)\]\(\s*(\S+?)(?:\s+"[^"]*")?\s*\)`)
+)
 
 func (p *Post) extractImages() {
 	p.Images = extractImages(p.Content)
+}
+
+// extractImageAltText maps image URLs to their Markdown alt text for any
+// images written with Markdown image syntax in content.
+func extractImageAltText(content string) map[string]string {
+	alts := map[string]string{}
+	for _, m := range imageMarkdownRegex.FindAllStringSubmatch(content, -1) {
+		alt := strings.TrimSpace(m[1])
+		if alt == "" {
+			continue
+		}
+		alts[m[2]] = alt
+	}
+	return alts
 }
 
 func extractImages(content string) []string {

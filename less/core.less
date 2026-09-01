@@ -605,6 +605,91 @@ p {
 	}
 }
 
+ol.pinned-list {
+	width: 95%;
+	padding-left: 1.5rem;
+
+	li.pinned-item {
+		// Flex rather than floating the controls. A float is out of normal
+		// flow, so it does not contribute to the row's height and the
+		// buttons end up straddling the row below.
+		display: flex;
+		align-items: center;
+		padding: 0.35rem 0;
+
+		& + li.pinned-item {
+			border-top: 1px solid #ccc;
+		}
+	}
+
+	.pinned-title {
+		// Take the slack so the controls sit flush right, and keep a long
+		// title on one line rather than pushing the buttons out of view.
+		flex: 1 1 auto;
+		min-width: 0;
+		margin-right: 1em;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	// While a reorder is in flight, stop a second click landing before the
+	// server has answered the first.
+	&.is-busy .pinned-controls {
+		pointer-events: none;
+		opacity: 0.6;
+	}
+
+	.pinned-controls {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: center;
+
+		// Each control is its own form so that the page needs no
+		// JavaScript, and forms are block-level by default.
+		form {
+			display: flex;
+			margin: 0 0 0 0.25em;
+		}
+
+		// The shared input rule sizes buttons for form submits, which is
+		// far too heavy for a row of inline row actions.
+		button {
+			padding: 0.15em 0.6em;
+			font-size: 0.8rem;
+			line-height: 1.6;
+		}
+
+		button.pinned-move {
+			// Fixed width so the arrows line up down the column whether or
+			// not a given row has both of them.
+			width: 2.2em;
+			padding-left: 0;
+			padding-right: 0;
+			text-align: center;
+		}
+
+		// Unpin reads as a link rather than a third button: it is a
+		// different kind of action from reordering, and giving it equal
+		// visual weight made a destructive action the heaviest thing on
+		// the row. It stays a form submit so the page needs no JavaScript
+		// and the action stays a POST.
+		button.pinned-unpin {
+			background: none;
+			border: none;
+			padding: 0 0 0 0.5em;
+			color: @primary;
+			cursor: pointer;
+			text-decoration: none;
+
+			&:hover, &:focus {
+				background: none;
+				text-decoration: underline;
+			}
+		}
+	}
+}
+
 table.classy {
 	width: 95%;
 	border-collapse: collapse;
@@ -1350,6 +1435,47 @@ li#create-collection {
 		.section > p.explain {
 			font-size: 0.8em;
 		}
+	}
+	.verification-row {
+		display: flex;
+		align-items: center;
+		margin-bottom: 0.5em;
+
+		input[type=text] {
+			flex: 1;
+			min-width: 0;
+		}
+	}
+
+	// Neither of these is a submit, so they take the shared input rule's
+	// half-em padding without the primary fill that would justify it, and
+	// render as bare browser buttons next to the panel's styled controls.
+	// Draw them as links: both are secondary to Save changes, which is the
+	// only thing on this page that should look like a button.
+	.remove-verification, #add-verification {
+		background: none;
+		border: none;
+		color: @primary;
+		cursor: pointer;
+		font-size: 0.86em;
+		text-decoration: none;
+
+		&:hover, &:focus {
+			background: none;
+			text-decoration: underline;
+		}
+	}
+
+	.remove-verification {
+		flex: none;
+		margin-left: 0.5em;
+		padding: 0 0.25em;
+		font-size: 1.1em;
+		line-height: 1;
+	}
+
+	#add-verification {
+		padding: 0;
 	}
 }
 

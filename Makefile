@@ -1,6 +1,24 @@
-GITREV=`git describe | cut -c 2-`
-LDFLAGS=-ldflags="-s -w -X 'github.com/writefreely/writefreely.softwareVer=$(GITREV)' -extldflags '-static'"
-BASELDFLAGS=-ldflags="-s -w -X 'github.com/writefreely/writefreely.softwareVer=$(GITREV)'"
+# Version reported by the binary, in preference order: an explicit
+# VERSION=, the current git description, or the default compiled into
+# app.go. When none of the first two are available the version is left
+# alone rather than overridden with an empty string. `git describe` fails
+# whenever the build context has no usable git repository, which includes
+# a container build from a git worktree or a shallow CI checkout, and that
+# produced binaries reporting a bare "v".
+VERSION ?=
+GITREV := $(shell git describe --tags 2>/dev/null | cut -c 2-)
+VERSTR := $(if $(VERSION),$(VERSION),$(GITREV))
+VERFLAG := $(if $(VERSTR),-X 'github.com/writefreely/writefreely.softwareVer=$(VERSTR)',)
+
+# Release archives are named after the version, so they need a value even
+# when neither VERSION nor git can supply one. Fall back to the constant
+# the binary itself would report, which keeps the file name meaningful
+# rather than producing writefreely__linux_amd64.tar.gz.
+DEFAULTVER := $(shell sed -n 's/^[[:space:]]*softwareVer = "\(.*\)"/\1/p' app.go)
+ARCHIVEVER := $(if $(VERSTR),$(VERSTR),$(DEFAULTVER))
+
+LDFLAGS=-ldflags="-s -w $(VERFLAG) -extldflags '-static'"
+BASELDFLAGS=-ldflags="-s -w $(VERFLAG)"
 
 GOCMD=go
 GOINSTALL=$(GOCMD) install $(LDFLAGS)
@@ -10,7 +28,7 @@ GOGET=$(GOCMD) get
 BINARY_NAME=writefreely
 BUILDPATH=build/$(BINARY_NAME)
 DOCKERCMD=docker
-IMAGE_NAME=writeas/writefreely
+IMAGE_NAME=ghcr.io/josephquigley/wispwriter
 TMPBIN=./tmp
 
 all : build
@@ -67,7 +85,52 @@ build-arm64: deps
 	xgo --targets=linux/arm64, -dest build/ $(LDFLAGS) -tags='netgo sqlite' -go go-1.25.x -out writefreely -pkg ./cmd/writefreely .
 
 build-docker :
-	$(DOCKERCMD) build -t $(IMAGE_NAME):latest -t $(IMAGE_NAME):$(GITREV) .
+	$(DOCKERCMD) build --build-arg WRITEFREELY_VERSION=$(VERSTR) -t $(IMAGE_NAME):latest $(if $(VERSTR),-t $(IMAGE_NAME):$(VERSTR),) .
+
+# Bump the version compiled into the binary, commit it and tag it, so the
+# tag and the constant can never disagree. The tag is what CI turns into
+# published image tags.
+#
+#   make bump VERSION=0.18.1
+#   make bump-patch     0.17.2 -> 0.17.3
+#   make bump-minor     0.17.2 -> 0.18.0
+#   make bump-major     0.17.2 -> 1.0.0
+#
+# Named bump rather than release because release already builds the
+# cross-compiled binary tarballs.
+#
+# Releases are cut on main, so this refuses to run anywhere else. It
+# commits and tags, and a tag left on the wrong commit is the part that is
+# painful to undo.
+bump:
+	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null); \
+		test "$$branch" = "main" || { echo "make bump must run on main, not $$branch"; exit 1; }
+	@if [ -z "$(VERSION)" ]; then echo "usage: make bump VERSION=x.y.z"; exit 1; fi
+	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "VERSION must look like x.y.z"; exit 1; }
+	@test -z "$$(git status --porcelain)" || { echo "working tree is dirty; commit or stash first"; exit 1; }
+	@if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null; then echo "tag v$(VERSION) already exists"; exit 1; fi
+	@sed -i.relbak -E 's/^([[:space:]]*softwareVer = ")[^"]*(")/\1$(VERSION)\2/' app.go && rm -f app.go.relbak
+	@grep -q 'softwareVer = "$(VERSION)"' app.go || { echo "failed to update softwareVer in app.go"; exit 1; }
+	@gofmt -l app.go | grep -q . && { echo "app.go is not gofmt-clean after the edit"; exit 1; } || true
+	git add app.go
+	git commit -m "Release $(VERSION)"
+	git tag -a "v$(VERSION)" -m "Wisp Edition $(VERSION)"
+	@echo
+	@echo "Tagged v$(VERSION). Publish with:"
+	@echo "    git push origin HEAD --tags"
+
+# Derive the next version from the constant bump itself maintains, then
+# hand off to bump so its branch, tag and working tree checks all still
+# apply. app.go is the source of truth rather than `git describe`, because
+# bump writes the constant and the tag in one commit, so they cannot drift.
+bump-major:
+	@"$(MAKE)" bump VERSION=$$(echo "$(DEFAULTVER)" | awk -F. '{print $$1+1".0.0"}')
+
+bump-minor:
+	@"$(MAKE)" bump VERSION=$$(echo "$(DEFAULTVER)" | awk -F. '{print $$1"."$$2+1".0"}')
+
+bump-patch:
+	@"$(MAKE)" bump VERSION=$$(echo "$(DEFAULTVER)" | awk -F. '{print $$1"."$$2"."$$3+1}')
 
 test:
 	$(GOTEST) -v ./...
@@ -98,31 +161,31 @@ release : clean ui
 	mkdir $(BUILDPATH)/keys
 	$(MAKE) build-linux
 	mv build/$(BINARY_NAME)-linux-amd64 $(BUILDPATH)/$(BINARY_NAME)
-	tar -cvzf $(BINARY_NAME)_$(GITREV)_linux_amd64.tar.gz -C build $(BINARY_NAME)
+	tar -cvzf $(BINARY_NAME)_$(ARCHIVEVER)_linux_amd64.tar.gz -C build $(BINARY_NAME)
 	rm $(BUILDPATH)/$(BINARY_NAME)
 	$(MAKE) build-arm6
 	mv build/$(BINARY_NAME)-linux-arm-6 $(BUILDPATH)/$(BINARY_NAME)
-	tar -cvzf $(BINARY_NAME)_$(GITREV)_linux_arm6.tar.gz -C build $(BINARY_NAME)
+	tar -cvzf $(BINARY_NAME)_$(ARCHIVEVER)_linux_arm6.tar.gz -C build $(BINARY_NAME)
 	rm $(BUILDPATH)/$(BINARY_NAME)
 	$(MAKE) build-arm7
 	mv build/$(BINARY_NAME)-linux-arm-7 $(BUILDPATH)/$(BINARY_NAME)
-	tar -cvzf $(BINARY_NAME)_$(GITREV)_linux_arm7.tar.gz -C build $(BINARY_NAME)
+	tar -cvzf $(BINARY_NAME)_$(ARCHIVEVER)_linux_arm7.tar.gz -C build $(BINARY_NAME)
 	rm $(BUILDPATH)/$(BINARY_NAME)
 	$(MAKE) build-arm64
 	mv build/$(BINARY_NAME)-linux-arm64 $(BUILDPATH)/$(BINARY_NAME)
-	tar -cvzf $(BINARY_NAME)_$(GITREV)_linux_arm64.tar.gz -C build $(BINARY_NAME)
+	tar -cvzf $(BINARY_NAME)_$(ARCHIVEVER)_linux_arm64.tar.gz -C build $(BINARY_NAME)
 	rm $(BUILDPATH)/$(BINARY_NAME)
 	$(MAKE) build-darwin
 	mv build/$(BINARY_NAME)-darwin-10.12-amd64 $(BUILDPATH)/$(BINARY_NAME)
-	tar -cvzf $(BINARY_NAME)_$(GITREV)_macos_amd64.tar.gz -C build $(BINARY_NAME)
+	tar -cvzf $(BINARY_NAME)_$(ARCHIVEVER)_macos_amd64.tar.gz -C build $(BINARY_NAME)
 	rm $(BUILDPATH)/$(BINARY_NAME)
 	$(MAKE) build-darwin-arm64
 	mv build/$(BINARY_NAME)-darwin-10.12-arm64 $(BUILDPATH)/$(BINARY_NAME)
-	tar -cvzf $(BINARY_NAME)_$(GITREV)_macos_arm64.tar.gz -C build $(BINARY_NAME)
+	tar -cvzf $(BINARY_NAME)_$(ARCHIVEVER)_macos_arm64.tar.gz -C build $(BINARY_NAME)
 	rm $(BUILDPATH)/$(BINARY_NAME)
 	$(MAKE) build-windows
 	mv build/$(BINARY_NAME)-windows-4.0-amd64.exe $(BUILDPATH)/$(BINARY_NAME).exe
-	cd build; zip -r ../$(BINARY_NAME)_$(GITREV)_windows_amd64.zip ./$(BINARY_NAME)
+	cd build; zip -r ../$(BINARY_NAME)_$(ARCHIVEVER)_windows_amd64.zip ./$(BINARY_NAME)
 	rm $(BUILDPATH)/$(BINARY_NAME).exe
 
 # This assumes you're on linux/amd64
@@ -134,7 +197,7 @@ release-linux : clean ui
 	mkdir $(BUILDPATH)/keys
 	$(MAKE) build-no-sqlite
 	mv cmd/writefreely/$(BINARY_NAME) $(BUILDPATH)/$(BINARY_NAME)
-	tar -cvzf $(BINARY_NAME)_$(GITREV)_linux_amd64.tar.gz -C build $(BINARY_NAME)
+	tar -cvzf $(BINARY_NAME)_$(ARCHIVEVER)_linux_amd64.tar.gz -C build $(BINARY_NAME)
 
 release-docker :
 	$(DOCKERCMD) push $(IMAGE_NAME)

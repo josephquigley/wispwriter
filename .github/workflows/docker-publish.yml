@@ -29,6 +29,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          # Tags, not just the tip: the version compiled into the binary
+          # comes from `git describe`, which a shallow checkout defeats.
+          fetch-depth: 0
+
+      # Passed to the build as WRITEFREELY_VERSION. Resolved here rather
+      # than inside the container, because the build context does not
+      # always carry usable git metadata.
+      - name: Determine version
+        id: version
+        run: echo "version=$(git describe --tags 2>/dev/null | cut -c 2-)" >> "$GITHUB_OUTPUT"
 
       # Set up QEMU for cross-building
       - name: Set up QEMU
@@ -42,7 +53,7 @@ jobs:
       # https://github.com/docker/login-action
       - name: Log into registry ${{ env.REGISTRY }}
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v4.3.0
+        uses: docker/login-action@v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -56,7 +67,11 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}
-          flavor: latest=true
+          # latest=auto applies the latest tag to semver releases only.
+          # With latest=true every push to develop claimed it, so the
+          # latest image tracked development rather than releases, and
+          # docker-compose.prod.yml defaults to latest.
+          flavor: latest=auto
 
       # Build and push Docker image with Buildx (don't push on PR)
       # https://github.com/docker/build-push-action
@@ -68,3 +83,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            WRITEFREELY_VERSION=${{ steps.version.outputs.version }}
+          # arm64 is built under emulation, so a cold cache is slow.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
