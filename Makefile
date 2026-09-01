@@ -82,8 +82,8 @@ build-docker :
 	$(DOCKERCMD) build --build-arg WRITEFREELY_VERSION=$(VERSTR) -t $(IMAGE_NAME):latest $(if $(VERSTR),-t $(IMAGE_NAME):$(VERSTR),) .
 
 # Prepare a release: bump the version compiled into the binary and commit
-# it on develop. The release itself is the develop -> main pull request,
-# so the same CI that gates feature work gates it.
+# it. The release itself is the pull request into main, so the same CI that
+# gates feature work gates it.
 #
 #   make bump VERSION=0.18.1
 #   make bump-patch     0.17.2 -> 0.17.3
@@ -93,10 +93,9 @@ build-docker :
 # Named bump rather than release because release already builds the
 # cross-compiled binary tarballs.
 #
-# On develop and not on a branch of its own, so that develop always holds
-# the version the next release will carry. A bump committed anywhere else
-# reaches main without reaching develop, and the next bump then computes
-# the version that was already released.
+# The branch this runs on does not matter. What is released is whatever
+# version reaches main, read from app.go there, so the commit only has to
+# arrive through the usual pull request.
 #
 # Nothing here tags. Merging the pull request into main is what releases:
 # .github/workflows/wisp-release.yml sees a version on main with no tag,
@@ -104,8 +103,6 @@ build-docker :
 # already built. Tagging locally would put the tag on a commit CI has not
 # passed yet, and a tag on the wrong commit is the painful part to undo.
 bump:
-	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null); \
-		test "$$branch" = "develop" || { echo "make bump must run on develop, not $$branch"; exit 1; }
 	@if [ -z "$(VERSION)" ]; then echo "usage: make bump VERSION=x.y.z"; exit 1; fi
 	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "VERSION must look like x.y.z"; exit 1; }
 	@test -z "$$(git status --porcelain)" || { echo "working tree is dirty; commit or stash first"; exit 1; }
@@ -116,7 +113,7 @@ bump:
 	git add app.go
 	git commit -m "Release $(VERSION)"
 	@echo
-	@echo "Committed on develop. Release it with:"
+	@echo "Committed. Release it with:"
 	@echo "    git push"
 	@echo "    gh pr create --base main --title 'Release $(VERSION)'"
 	@echo
