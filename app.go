@@ -60,13 +60,17 @@ const (
 	// fork brands itself as an edition so the upstream lineage stays visible.
 	serverSoftwareDisplay = "WriteFreely (Wisp Edition)"
 	softwareURL           = "https://writefreely.org"
+	// softwareRepo is where the code this build runs actually lives. Upstream
+	// points this at its own repository, which would misidentify an instance
+	// running patched code.
+	softwareRepo = "https://github.com/josephquigley/writefreely-wisp"
 )
 
 var (
 	debugging bool
 
 	// Software version can be set from git env using -ldflags
-	softwareVer = "0.17.2"
+	softwareVer = "0.18.0"
 
 	// DEPRECATED VARS
 	isSingleUser bool
@@ -380,7 +384,7 @@ func pageForReq(app *App, r *http.Request) page.StaticPage {
 	p := page.StaticPage{
 		AppCfg:  app.cfg.App,
 		Path:    r.URL.Path,
-		Version: "v" + softwareVer,
+		Version: "v" + editionVersion(),
 	}
 
 	// Use custom style, if file exists
@@ -673,9 +677,21 @@ func ConnectToDatabase(app *App) error {
 	return nil
 }
 
+// editionVersion returns the version this build reports to the outside world:
+// the upstream version it is based on, plus "+wisp" as SemVer build metadata
+// (spec item 10), which is ignored when comparing versions, so a peer still
+// reads it as the upstream release this build is based on.
+//
+// The suffix is appended here rather than written into softwareVer because the
+// Makefile overrides softwareVer through -ldflags with a git description,
+// which would drop a baked-in suffix.
+func editionVersion() string {
+	return softwareVer + "+wisp"
+}
+
 // FormatVersion constructs the version string for the application
 func FormatVersion() string {
-	return serverSoftwareDisplay + " " + softwareVer
+	return serverSoftwareDisplay + " " + editionVersion()
 }
 
 // OutputVersion prints out the version of the application.
@@ -1186,5 +1202,5 @@ func ServerUserAgent(hostName string) string {
 	if hostName != "" {
 		hostUAStr = "; +" + hostName
 	}
-	return "Go (" + serverSoftware + "/" + softwareVer + hostUAStr + ")"
+	return "Go (" + serverSoftware + "/" + editionVersion() + hostUAStr + ")"
 }

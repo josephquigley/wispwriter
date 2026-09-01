@@ -1,0 +1,243 @@
+name: Publish images and cut releases
+
+# Fork-only. Upstream's docker-publish.yml is guarded off here so that file
+# stays byte-identical to upstream apart from the guard, and every sync from
+# upstream leaves it alone.
+#
+# Three paths, and only one of them ever builds:
+#
+#   build    every push to main or develop builds and publishes the image
+#   release  a push to main whose version has no tag yet is a release: it
+#            tags, publishes the GitHub Release, and retags the image the
+#            build job just published
+#   retag    a hand-pushed tag retags an existing image, so a release never
+#            depends on a second build of the same commit producing the
+#            same bits
+on:
+  push:
+    branches: [main, develop]
+    # "+" means "one or more of the preceding" in GitHub's filter patterns,
+    # so it has to be escaped. An invalid pattern here fails the run in zero
+    # seconds with no jobs and no logs.
+    tags:
+      - 'v*\+wisp'
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build
+    if: startsWith(github.ref, 'refs/heads/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # The version compiled into the binary comes from the constant in
+      # app.go, not from `git describe`. This repository carries every
+      # upstream tag, so a description here names an upstream release the
+      # build may have nothing to do with. The suffix identifying the fork
+      # is appended by the binary itself, so what is passed is the bare
+      # number.
+      - name: Read the version from app.go
+        id: version
+        run: |
+          version=$(sed -n 's/^[[:space:]]*softwareVer = "\(.*\)"/\1/p' app.go)
+          test -n "$version" || { echo "no softwareVer in app.go"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4.0.0
+
+      # Required before the build: cache export is unsupported on the
+      # default docker driver.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.2.0
+
+      - name: Log into ghcr.io
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          # sha-<short> is what the release and retag jobs look for when they
+          # retag a digest, so it is published for every branch build.
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
+          # latest belongs to releases, and a release is a retag of one of
+          # these builds rather than a build of its own.
+          flavor: latest=false
+
+      - name: Build and push
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            WRITEFREELY_VERSION=${{ steps.version.outputs.version }}
+          # arm64 is built under emulation, so a cold cache is slow.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    name: release
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # Tags, so the release can tell whether this version was already
+          # released and which fork tag came before it.
+          fetch-depth: 0
+
+      # A merge to main whose version has no tag is a release, and anything
+      # else is a no-op. That needs no label to remember and cannot fire
+      # twice for one version.
+      - name: Decide whether this is a release
+        id: decide
+        run: |
+          version=$(sed -n 's/^[[:space:]]*softwareVer = "\(.*\)"/\1/p' app.go)
+          test -n "$version" || { echo "no softwareVer in app.go"; exit 1; }
+          tag="v${version}+wisp"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "${tag} already exists; nothing to release"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Bounded to fork tags. This repository carries every upstream
+          # tag, so letting the notes generator pick a previous tag on its
+          # own produces notes covering upstream's history.
+          previous=$(git tag --list '*+wisp' --sort=-creatordate | head -1)
+          {
+            echo "release=true"
+            echo "version=${version}"
+            echo "tag=${tag}"
+            # Image tags may not contain "+". Ordering means nothing to a
+            # tag, so flattening it is safe here and nowhere else.
+            echo "docker_tag=${version}-wisp"
+            echo "previous=${previous}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create and push the tag
+        if: steps.decide.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+          VERSION: ${{ steps.decide.outputs.version }}
+        run: |
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              tag -a "$TAG" -m "Wisp Edition ${VERSION}"
+          git push origin "$TAG"
+
+      # The operator-facing half of the notes: what someone upgrading has to
+      # do. The generated half, which lists what changed, is appended by the
+      # API call below.
+      - name: Read the merged pull request body
+        id: pr
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          body=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            --jq 'first(.[] | select(.merged_at != null) | .body // "") // ""')
+          {
+            echo "body<<PRBODY_EOF"
+            echo "$body"
+            echo "PRBODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish the GitHub Release
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.decide.outputs.tag }}
+          PREVIOUS: ${{ steps.decide.outputs.previous }}
+          BODY: ${{ steps.pr.outputs.body }}
+        run: |
+          # The REST API takes a hand-written body and the generated list at
+          # once, appending the second under the first.
+          gh api "repos/${GITHUB_REPOSITORY}/releases" \
+            -f "tag_name=${TAG}" \
+            -f "name=${TAG}" \
+            -f "body=${BODY}" \
+            -F generate_release_notes=true \
+            ${PREVIOUS:+-f "previous_tag_name=${PREVIOUS}"}
+
+      - name: Log into ghcr.io
+        if: steps.decide.outputs.release == 'true'
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Inline, rather than left to the tag-triggered retag job below: a tag
+      # pushed with GITHUB_TOKEN triggers no workflow, so that job never runs
+      # for an automated release.
+      - name: Retag the published image
+        if: steps.decide.outputs.release == 'true'
+        env:
+          DOCKER_TAG: ${{ steps.decide.outputs.docker_tag }}
+        run: |
+          source="${IMAGE}:sha-${GITHUB_SHA::7}"
+          docker buildx imagetools inspect "$source" >/dev/null 2>&1 || {
+            echo "no image at ${source}. The build job publishes it, so this"
+            echo "means the build did not finish or published another tag."
+            exit 1
+          }
+          docker buildx imagetools create -t "${IMAGE}:${DOCKER_TAG}" "$source"
+          docker buildx imagetools create -t "${IMAGE}:latest" "$source"
+
+  retag:
+    name: retag
+    # Hand-pushed tags only. An automated release retags inline, because the
+    # tag it pushes triggers nothing.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Log into ghcr.io
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retag the published image
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          docker_tag="${version//+/-}"
+          source="${IMAGE}:sha-${GITHUB_SHA::7}"
+          docker buildx imagetools inspect "$source" >/dev/null 2>&1 || {
+            echo "no image at ${source}. Push the tag only after the branch"
+            echo "build for this commit has published its image."
+            exit 1
+          }
+          docker buildx imagetools create -t "${IMAGE}:${docker_tag}" "$source"
+          docker buildx imagetools create -t "${IMAGE}:latest" "$source"

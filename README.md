@@ -1,6 +1,6 @@
 &nbsp;
 <p align="center">
-	<a href="https://github.com/josephquigley/wispwriter"><img src="https://writefreely.org/img/writefreely.svg" width="350px" alt="WriteFreely (Wisp Edition)" /></a>
+	<a href="https://github.com/josephquigley/writefreely-wisp"><img src="https://writefreely.org/img/writefreely.svg" width="350px" alt="WriteFreely (Wisp Edition)" /></a>
 </p>
 <hr />
 <p align="center">
@@ -10,7 +10,7 @@
 	<a href="https://github.com/writefreely/writefreely">
 		<img src="https://img.shields.io/badge/fork%20of-writefreely%2Fwritefreely-blue" alt="Fork of writefreely/writefreely" />
 	</a>
-	<a href="https://github.com/josephquigley/wispwriter/blob/develop/LICENSE">
+	<a href="https://github.com/josephquigley/writefreely-wisp/blob/develop/LICENSE">
 		<img src="https://img.shields.io/badge/license-AGPL--3.0-green" alt="AGPL-3.0" />
 	</a>
 </p>
@@ -47,7 +47,7 @@ the features this fork exists to provide.
 
 Rather than report something untrue, the check is disabled and the admin
 Updates page explains why. Watch
-[releases](https://github.com/josephquigley/wispwriter/releases) instead. See
+[releases](https://github.com/josephquigley/writefreely-wisp/releases) instead. See
 `updateChecksSupported` in `updates.go` to re-enable it once the check points
 at this fork's own releases.
 
@@ -88,8 +88,10 @@ WriteFreely deploys as a static binary on any platform and architecture that Go 
 This edition has no pre-built binaries yet. Build from source with `make build`, or run the published container image:
 
 ```
-ghcr.io/josephquigley/wispwriter:latest
+ghcr.io/josephquigley/writefreely-wisp:latest
 ```
+
+The repository and the image were previously named `wispwriter`. GitHub redirects the old repository URL, but the container registry does not move a package: images published before the rename stay at `ghcr.io/josephquigley/wispwriter` and receive no new tags. Point existing deployments at the new path.
 
 See [docs/docker.md](docs/docker.md) for the container setup. Upstream's
 [installation guide](https://writefreely.org/start) covers configuration, which
@@ -120,9 +122,27 @@ Read our full [documentation on WriteFreely.org](https://writefreely.org/docs) &
 
 Start hacking on WriteFreely with our [developer setup guide](https://writefreely.org/docs/latest/developer/setup). For Docker support, see [docs/docker.md](docs/docker.md) in this repository, or our [Docker guide](https://writefreely.org/docs/latest/admin/docker).
 
+## Releases
+
+Releases are cut by pull request, so the same CI that gates feature work gates them.
+
+```
+make bump-patch                                   # edits app.go, commits
+git push                                          # you push it
+gh pr create --base main --title 'Release <version>'   # you open the pull request
+```
+
+`bump` does the first line only: it writes the version into `app.go` and commits it on the branch you are standing on. It stops before pushing, because the diff and the pull request into `main` are worth a look first. Nothing is tagged locally, and the branch does not matter: what is released is whatever version reaches `main`.
+
+Merging that pull request into `main` is what releases: a version on `main` with no matching tag is a release, so the workflow tags it, publishes the GitHub Release, and retags the image the branch build already published. That check makes it idempotent, so a merge that does not change the version publishes nothing.
+
+Put anything an operator has to *do* (migrations, new config keys, rebuild steps) in the pull request body. It becomes the top of the release notes, with the generated list of changes underneath it.
+
+Versions carry `+wisp` as SemVer build metadata, so `0.17.3+wisp` is this fork's build of an upstream `0.17.3` line and compares equal to it rather than older. Tags read `v0.17.3+wisp`, which is also why they never collide with the upstream tags this repository inherits. Image tags cannot contain `+`, so the image for that release is tagged `0.17.3-wisp`.
+
 ## Contributing
 
-Issues and pull requests specific to this edition belong on [this repo](https://github.com/josephquigley/wispwriter/issues). Anything that is not specific to the fork is better raised upstream, where it helps everyone.
+Issues and pull requests specific to this edition belong on [this repo](https://github.com/josephquigley/writefreely-wisp/issues). Anything that is not specific to the fork is better raised upstream, where it helps everyone.
 
 Code here follows the upstream [Contributing Guide](https://github.com/writefreely/writefreely/blob/develop/CONTRIBUTING.md#contributing-to-writefreely), since features from this fork are offered upstream where they fit.
 

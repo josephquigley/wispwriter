@@ -588,7 +588,7 @@ switch_docker() {
 ==> done. Point the app service at the new image and the new mount:
 
       writefreely-web:
-        image: ghcr.io/josephquigley/wispwriter:latest
+        image: ghcr.io/josephquigley/writefreely-wisp:latest
         user: "\${PUID:-1000}:\${PGID:-1000}"
         volumes:
           - $state_dir:/data

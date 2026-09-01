@@ -46,7 +46,7 @@ func nodeInfoConfig(db *datastore, cfg *config.Config) *nodeinfo.Config {
 			Private:         cfg.App.Private,
 			Software: nodeinfo.SoftwareMeta{
 				HomePage: softwareURL,
-				GitHub:   "https://github.com/writefreely/writefreely",
+				GitHub:   softwareRepo,
 				Follow:   "https://writing.exchange/@writefreely",
 			},
 			MaxBlogs:     cfg.App.MaxBlogs,
@@ -64,7 +64,7 @@ func nodeInfoConfig(db *datastore, cfg *config.Config) *nodeinfo.Config {
 		},
 		Software: nodeinfo.SoftwareInfo{
 			Name:    strings.ToLower(serverSoftware),
-			Version: softwareVer,
+			Version: editionVersion(),
 		},
 	}
 }
