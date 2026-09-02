@@ -1287,7 +1287,10 @@ func (p *PublicPost) ActivityObject(app *App) *activitystreams.Object {
 		p.formatContent(cfg, false, false)
 		p.augmentReadingDestination()
 	}
-	o.Content = string(p.HTMLContent)
+	// Resolve relative URLs before the content leaves this instance: a remote
+	// server resolves what it receives against its own address, not ours.
+	syndicated := syndicatedContent(p, o.URL)
+	o.Content = syndicated
 	if o.Type == "Note" && p.Title.String != "" {
 		// Render the explicitly-set title inside the Note, since Mastodon (at least) doesn't show the `name`
 		// property on Notes.
@@ -1295,7 +1298,7 @@ func (p *PublicPost) ActivityObject(app *App) *activitystreams.Object {
 	}
 	if p.Language.Valid {
 		o.ContentMap = map[string]string{
-			p.Language.String: string(p.HTMLContent),
+			p.Language.String: syndicated,
 		}
 	}
 	if len(p.Tags) == 0 {
