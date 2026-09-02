@@ -82,9 +82,10 @@ func handleViewSitemap(app *App, w http.ResponseWriter, r *http.Request) error {
 			{"mobile", true},
 			{"lastmod", p.Updated},
 		}
-		if len(p.Images) > 0 {
+		// Absolute URLs, and including uploads: p.Images alone misses them.
+		if images := p.AbsoluteImages(host); len(images) > 0 {
 			imgs := []stm.URL{}
-			for _, i := range p.Images {
+			for _, i := range images {
 				imgs = append(imgs, stm.URL{
 					{"loc", i},
 					{"title", ""},
