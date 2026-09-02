@@ -78,3 +78,24 @@ func TestSyndicatedContentResolvesAgainstPermalink(t *testing.T) {
 		t.Errorf("wanted %s, got %s", want, got)
 	}
 }
+
+// TestRelativeURLsSurviveRenderingThenAbsolutize checks the whole chain a post
+// body travels: markdown rendering, bluemonday sanitization, then
+// absolutization. Sanitization runs first and could plausibly drop a relative
+// URL before syndication ever sees it, which would make absolutizing moot.
+func TestRelativeURLsSurviveRenderingThenAbsolutize(t *testing.T) {
+	cfg := config.New()
+	cfg.App.Host = "https://quigs.blog"
+
+	rendered := applyMarkdown([]byte("![pic](pic.png)\n\n[sib](sibling)\n"), "https://quigs.blog/", cfg)
+	got := absolutizeHTML(rendered, "https://quigs.blog/rel-img-test")
+
+	for _, want := range []string{
+		`src="https://quigs.blog/pic.png"`,
+		`href="https://quigs.blog/sibling"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("wanted to find %s\nrendered: %s\nabsolutized: %s", want, rendered, got)
+		}
+	}
+}
