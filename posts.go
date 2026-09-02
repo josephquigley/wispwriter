@@ -1322,16 +1322,9 @@ func (p *PublicPost) ActivityObject(app *App) *activitystreams.Object {
 			})
 		}
 	}
-	if len(p.Images) > 0 {
-		altText := extractImageAltText(p.Content)
-		for _, i := range p.Images {
-			img := activitystreams.NewImageAttachment(i)
-			if alt, ok := altText[i]; ok {
-				img.Name = alt
-			}
-			o.Attachment = append(o.Attachment, img)
-		}
-	}
+	// Mastodon strips <img> from content and renders media only from the
+	// attachment array, so an inline-only image does not display there.
+	o.Attachment = imageAttachments(syndicated, p.Images, extractImageAltText(p.Content), o.URL)
 	// Find mentioned users
 	mentionedUsers := make(map[string]string)
 
