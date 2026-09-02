@@ -185,3 +185,9 @@ func absoluteImageURLs(content string, extracted []string, base string) []string
 func (p *PublicPost) AbsoluteImages(base string) []string {
 	return absoluteImageURLs(p.Content, p.Images, base)
 }
+
+// AbsoluteImages returns the post's images as absolute URLs, resolved against
+// base — the site host for a standalone post, which has no collection.
+func (p *AnonymousPost) AbsoluteImages(base string) []string {
+	return absoluteImageURLs(p.Content, p.Images, base)
+}

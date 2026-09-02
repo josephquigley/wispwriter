@@ -1819,7 +1819,10 @@ func extractImageAltText(content string) map[string]string {
 
 func extractImages(content string) []string {
 	matches := extract.ExtractUrls(content)
-	urls := map[string]bool{}
+	// Order of appearance, not map iteration order: twitter:image renders only
+	// the first image, so a random order made it a different image per request.
+	seen := map[string]bool{}
+	resURLs := make([]string, 0)
 	for i := range matches {
 		uRaw := matches[i].Text
 		// Parse the extracted text so we can examine the path
@@ -1831,12 +1834,11 @@ func extractImages(content string) []string {
 		if !imageURLRegex.MatchString(u.Path) {
 			continue
 		}
-		urls[uRaw] = true
-	}
-
-	resURLs := make([]string, 0)
-	for k := range urls {
-		resURLs = append(resURLs, k)
+		if seen[uRaw] {
+			continue
+		}
+		seen[uRaw] = true
+		resURLs = append(resURLs, uRaw)
 	}
 	return resURLs
 }

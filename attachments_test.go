@@ -213,3 +213,27 @@ func assertURLs(t *testing.T, want, got []string) {
 		}
 	}
 }
+
+// extractImages collected into a map and returned map iteration order, so a
+// post with several images produced a different order on every call — and
+// twitter:image, which takes only the first, picked one at random.
+func TestExtractImagesIsInOrderOfAppearance(t *testing.T) {
+	content := "![a](https://example.com/a.png)\n\n![b](https://example.com/b.png)\n\n![c](https://example.com/c.png)"
+	want := []string{
+		"https://example.com/a.png",
+		"https://example.com/b.png",
+		"https://example.com/c.png",
+	}
+
+	for i := 0; i < 20; i++ {
+		assertURLs(t, want, extractImages(content))
+	}
+}
+
+func TestAnonymousPostAbsoluteImages(t *testing.T) {
+	p := &AnonymousPost{Content: "![pic](/uploads/pic.png)"}
+
+	got := p.AbsoluteImages("https://quigs.blog")
+
+	assertURLs(t, []string{"https://quigs.blog/uploads/pic.png"}, got)
+}
