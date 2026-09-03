@@ -195,6 +195,9 @@ there, as above. Left unset they default inside the asset tree that ships
 with the image, where the next `docker compose pull && up -d` discards
 them.
 
+Backing that state directory up is a compose profile, off by default. See
+[backups](backup.md).
+
 ## Environment variables
 
 Read from `.env` by both compose files:
