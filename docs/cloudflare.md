@@ -37,7 +37,8 @@ the admin paths. Both are below.
 
 ## Rules
 
-Four rules, in this order. Replace `example.com` with your host.
+Four rules. **Order matters, and not in the way you might expect** — see the warning below.
+Replace `example.com` with your host.
 
 ```
 1. Bypass cache for signed-in sessions and admin paths
@@ -51,7 +52,11 @@ Four rules, in this order. Replace `example.com` with your host.
         or http.request.uri.path eq "/logout")
    -> Cache eligibility: Bypass cache
 
-2. Uploads and static assets: honour the origin's TTL
+2. General: cache anonymous HTML
+   ... and (GET or HEAD) and NOT-SESSION-OR-ADMIN
+   -> Eligible for cache; Edge TTL: 2h; Browser TTL: respect origin
+
+3. Overrides general: uploads and static assets
    ... and (GET or HEAD) and NOT-SESSION-OR-ADMIN
    and (starts_with(http.request.uri.path, "/uploads/")
         or starts_with(http.request.uri.path, "/css/")
@@ -59,48 +64,60 @@ Four rules, in this order. Replace `example.com` with your host.
         or starts_with(http.request.uri.path, "/img/"))
    -> Eligible for cache; Edge TTL: respect origin; Browser TTL: respect origin
 
-3. Index and feed: short TTL
+4. Overrides general: index and feed
    ... and (GET or HEAD) and NOT-SESSION-OR-ADMIN
    and (http.request.uri.path eq "/"
         or starts_with(http.request.uri.path, "/feed")
         or starts_with(http.request.uri.path, "/page/"))
-   -> Eligible for cache; Edge TTL: 300s; Browser TTL: respect origin
-
-4. Cache anonymous HTML
-   ... and (GET or HEAD) and NOT-SESSION-OR-ADMIN
-   -> Eligible for cache; Edge TTL: 7200s; Browser TTL: respect origin
+   -> Bypass cache   (on a paid plan, a short Edge TTL is better -- see below)
 ```
 
-### ⚠️ Repeat the exclusions in every caching rule
+### ⚠️ Every matching rule runs, and the last one wins
 
-`NOT-SESSION-OR-ADMIN` above is not shorthand for "rule 1 already handled it". It must be
-written out in rules 2, 3 and 4:
-
-```
-not (len(http.request.cookies["wfu"]) > 0
-     or starts_with(http.request.uri.path, "/me/")
-     or starts_with(http.request.uri.path, "/admin")
-     or starts_with(http.request.uri.path, "/api/")
-     or starts_with(http.request.uri.path, "/auth/")
-     or http.request.uri.path eq "/login"
-     or http.request.uri.path eq "/logout")
-```
+This is the single most important thing to understand, because getting it wrong looks correct
+and fails silently.
 
 **Cloudflare evaluates every matching cache rule in order, and a later match overrides an
-earlier one.** A bypass rule at the top does not protect anything below it: a broad "cache
-anonymous HTML" rule underneath silently turns caching back on for the very requests you
-excluded. This is easy to get wrong and gives no error — the rules look right and a request
-carrying `wfu` still comes back `HIT`.
+earlier one for the same setting.** Two consequences:
 
-### Why the index gets a short TTL
+- A bypass rule at the top protects nothing on its own. A broad "cache anonymous HTML" rule
+  below it turns caching back on for the very requests it excluded — a request carrying `wfu`
+  still comes back `HIT`. Every caching rule must repeat the exclusions inline, written out as
+  `NOT-SESSION-OR-ADMIN` above:
+
+  ```
+  not (len(http.request.cookies["wfu"]) > 0
+       or starts_with(http.request.uri.path, "/me/")
+       or starts_with(http.request.uri.path, "/admin")
+       or starts_with(http.request.uri.path, "/api/")
+       or starts_with(http.request.uri.path, "/auth/")
+       or http.request.uri.path eq "/login"
+       or http.request.uri.path eq "/logout")
+  ```
+
+- **Specific rules go after the general one, not before.** Put a "static assets, respect
+  origin TTL" rule above a "cache all HTML for 2h" rule and the general rule wins: your
+  immutable assets silently get a 2-hour edge TTL instead of the week the origin asked for.
+  The ordering above is general → specific for exactly this reason.
+
+### Why the index and feed are handled separately
 
 WriteFreely has no outgoing webhooks, so nothing can tell Cloudflare to purge when you publish.
-A short edge TTL on the index and feed is the substitute: a new post appears within five
-minutes. Post pages themselves are unaffected — a new post's URL is a cache miss on its first
-request — so only the listing pages need the shorter window.
+The index and the feed are the only URLs that change on *every* publish — a new post's own page
+is a cache miss on its first request, so it appears immediately either way.
 
-If you drive purges another way (a cron that polls the feed, or a hook in your own publishing
-script), raise rule 3's TTL to match rule 4.
+**On a paid plan**, give them a short Edge TTL (say 300s) rather than bypassing: a new post
+appears within five minutes and the edge still absorbs traffic spikes.
+
+**On the Free plan, a short TTL is not available.** Cloudflare clamps Edge Cache TTL to a
+**two-hour minimum** there, and it does so silently — set 300 and the rule is accepted, the
+dashboard shows 300, and objects keep serving `HIT` well past it. The only ways to keep the
+index fresh are to bypass it, or to purge on publish yourself. Bypassing costs little: the
+listing pages are cheap to render, and post pages and images — the bulk of the requests and
+almost all of the bytes — still cache.
+
+If you do drive purges another way (a cron that polls the feed, or a hook in your publishing
+script), cache the index like anything else and drop rule 4.
 
 ### Why not just strip the cookie on `/`
 
@@ -119,15 +136,24 @@ After any rule change, purge and check. Anonymous should hit; everything session
 admin-shaped should be `DYNAMIC` (not eligible) or `BYPASS`:
 
 ```sh
-curl -sI https://example.com/            | grep -i cf-cache-status   # HIT (after a warm-up)
+# a post page caches; run it twice, the second should hit
 curl -sI https://example.com/some-post   | grep -i cf-cache-status   # HIT
-curl -sI -H 'Cookie: wfu=x' https://example.com/ | grep -i cf-cache-status   # DYNAMIC
-curl -sI https://example.com/me/settings | grep -i cf-cache-status   # DYNAMIC
-curl -sI https://example.com/api/collections/<alias>/outbox | grep -i cf-cache-status  # DYNAMIC
+
+# the index, if you bypassed it as in rule 4
+curl -sI https://example.com/            | grep -i cf-cache-status   # DYNAMIC
+
+# these must never cache
+curl -sI -H 'Cookie: wfu=x' https://example.com/some-post | grep -i cf-cache-status   # DYNAMIC
+curl -sI https://example.com/me/settings | grep -i cf-cache-status                    # DYNAMIC
+curl -sI https://example.com/api/collections/<alias>/outbox | grep -i cf-cache-status # DYNAMIC
 ```
 
-The one that matters most is the third. If it says `HIT`, the exclusions are missing from a
-later rule and the owner's session can reach the shared cache.
+The one that matters most is the session check. If a request carrying `wfu` says `HIT`, the
+exclusions are missing from a later rule and the owner's session can reach the shared cache.
+
+To confirm an Edge TTL is really being applied — worth doing at least once, given the Free-plan
+clamp — warm a URL, wait past the TTL, and request it again. If `age` sails past the TTL while
+still reporting `HIT`, the value you set is not the value in force.
 
 ## Purge after anything that changes what the origin serves
 
@@ -141,6 +167,35 @@ curl -X POST \
   --data '{"purge_everything":true}' \
   "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/purge_cache"
 ```
+
+## HTML carries no cache headers at all
+
+WriteFreely sets `Cache-Control` on its static assets and **nothing** on HTML — no
+`Cache-Control`, no `ETag`, no `Last-Modified` on the index, post pages or the feed. That is not
+the same as "uncacheable": browsers fall back to *heuristic* freshness, so how long a reader
+keeps a stale page is up to their browser rather than up to you.
+
+The edge is unaffected either way if your rules use an Edge TTL override, but the reader side is
+worth stating explicitly. In nginx:
+
+```nginx
+# http context, e.g. a conf.d/00-cache-headers.conf, so several sites share it
+map $upstream_http_cache_control $default_cache_control {
+    ''      "public, max-age=0, must-revalidate";
+    default "";
+}
+
+# in the server block
+add_header Cache-Control $default_cache_control always;
+```
+
+The map yields an empty string whenever WriteFreely *did* send a `Cache-Control` — its static
+assets — and nginx omits an `add_header` whose value is empty, so this never duplicates or
+overrides a header the application set on purpose. Note `add_header` is inherited only by blocks
+that declare no `add_header` of their own.
+
+`max-age=0, must-revalidate` does not stop Cloudflare caching the page, as long as the rule sets
+an Edge TTL with "override origin".
 
 ## Zone settings worth checking
 
