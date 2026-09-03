@@ -12,6 +12,7 @@ package writefreely
 
 import (
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/writeas/web-core/activitystreams"
@@ -25,51 +26,34 @@ import (
 // the attachment array, so an image that appears solely inline is invisible
 // there. Attaching it is what makes it display.
 //
-// Images are gathered from two places, deduplicated by URL and kept in order of
-// appearance:
-//
-//   - <img> tags in the syndicated HTML. This covers uploads and any image
-//     written into the body, whether by Markdown or raw HTML, and carries the
-//     alt attribute along.
-//   - extracted, the URLs already found in the post text by extractImages.
-//     Those are bare image URLs rather than <img> tags, so HTML parsing alone
-//     would miss them and they would stop being attached.
-//
-// altText supplies names for the extracted URLs, which have no alt attribute of
-// their own. An alt attribute in the HTML wins over it.
+// The syndicated HTML is the source, with extracted supplying the bare image
+// URLs that live in the post text rather than in a tag, and altText their
+// names. An alt attribute in the HTML wins over that map.
 func imageAttachments(syndicatedHTML string, extracted []string, altText map[string]string, base string) []activitystreams.Attachment {
-	b, baseErr := url.Parse(base)
-	resolve := func(v string) string {
-		if baseErr != nil || !b.IsAbs() {
-			return v
+	images := postImages("", syndicatedHTML, base)
+
+	b, err := url.Parse(base)
+	baseUsable := err == nil && b.IsAbs()
+	for _, raw := range extracted {
+		if resolved, ok := resolveImageURL(raw, b, baseUsable); ok {
+			images = append(images, postImage{URL: resolved, Alt: altText[raw]})
 		}
-		return absolutizeURL(v, b)
 	}
 
 	var attachments []activitystreams.Attachment
 	seen := map[string]bool{}
-
-	add := func(rawURL, name string) {
-		resolved := resolve(strings.TrimSpace(rawURL))
-		if resolved == "" || seen[resolved] {
-			return
+	for _, img := range images {
+		if seen[img.URL] {
+			continue
 		}
-		seen[resolved] = true
+		seen[img.URL] = true
 
-		a := activitystreams.NewImageAttachment(resolved)
-		if name != "" {
-			a.Name = name
+		a := activitystreams.NewImageAttachment(img.URL)
+		if img.Alt != "" {
+			a.Name = img.Alt
 		}
 		attachments = append(attachments, a)
 	}
-
-	for _, img := range parseImages(syndicatedHTML) {
-		add(img.src, img.alt)
-	}
-	for _, u := range extracted {
-		add(u, altText[u])
-	}
-
 	return attachments
 }
 
@@ -119,75 +103,143 @@ func parseImages(content string) []parsedImage {
 	return images
 }
 
-// absoluteImageURLs returns every image the post references, as absolute URLs.
-//
-// og:image, twitter:image and the image sitemap all need absolute URLs: a
-// preview scraper or a search crawler fetches the page out of context and will
-// not resolve a relative one. p.Images alone is not enough, because
-// extractImages finds URLs with extract.ExtractUrls, which only recognises
-// those carrying a domain — an uploaded image, referenced as /uploads/...,
-// is invisible to it.
-//
-// Markdown image targets are gathered here instead, filtered to image-looking
-// paths, resolved against base, and unioned with the already-extracted URLs.
-// Order of appearance is preserved and duplicates dropped.
-//
-// A relative URL is dropped when base is unusable rather than emitted raw:
-// consumers fall back to the blog avatar when there is no image, which is
-// better than an invalid one.
-func absoluteImageURLs(content string, extracted []string, base string) []string {
+// imageURLsOf flattens images to their URLs, appending any extra URLs that were
+// found elsewhere and are not already present.
+func imageURLsOf(images []postImage, extra []string, base string) []string {
+	out := make([]string, 0, len(images))
+	seen := map[string]bool{}
+	for _, img := range images {
+		if seen[img.URL] {
+			continue
+		}
+		seen[img.URL] = true
+		out = append(out, img.URL)
+	}
+
 	b, err := url.Parse(base)
 	baseUsable := err == nil && b.IsAbs()
-
-	var out []string
-	seen := map[string]bool{}
-
-	add := func(raw string) {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			return
-		}
-		ref, err := url.Parse(raw)
-		if err != nil {
-			return
-		}
-		if !ref.IsAbs() {
-			if !baseUsable {
-				return
-			}
-			ref = b.ResolveReference(ref)
-		}
-		resolved := ref.String()
-		if seen[resolved] {
-			return
+	for _, raw := range extra {
+		resolved, ok := resolveImageURL(raw, b, baseUsable)
+		if !ok || seen[resolved] {
+			continue
 		}
 		seen[resolved] = true
 		out = append(out, resolved)
 	}
-
-	for _, m := range imageMarkdownRegex.FindAllStringSubmatch(content, -1) {
-		target := m[2]
-		u, err := url.Parse(strings.TrimSpace(target))
-		if err != nil || !imageURLRegex.MatchString(u.Path) {
-			continue
-		}
-		add(target)
-	}
-	for _, u := range extracted {
-		add(u)
-	}
-
 	return out
 }
 
 // AbsoluteImages returns the post's images as absolute URLs, resolved against
 // base — the collection's canonical URL at every call site.
 func (p *PublicPost) AbsoluteImages(base string) []string {
-	return absoluteImageURLs(p.Content, p.Images, base)
+	return imageURLsOf(postImages(p.Content, string(p.HTMLContent), base), nil, base)
 }
 
 // AbsoluteImages returns the post's images as absolute URLs, resolved against
 // base — the site host for a standalone post, which has no collection.
 func (p *AnonymousPost) AbsoluteImages(base string) []string {
-	return absoluteImageURLs(p.Content, p.Images, base)
+	return imageURLsOf(postImages(p.Content, string(p.HTMLContent), base), nil, base)
+}
+
+// postImage is one image a post references, with its alt text where the post
+// supplied one.
+type postImage struct {
+	URL string
+	Alt string
+}
+
+// postImages returns every image a post references, as absolute URLs resolved
+// against base, in order of first appearance and without duplicates.
+//
+// It is the single answer to "what images does this post use", shared by the
+// ActivityPub attachment list, og:image, twitter:image and the image sitemap,
+// which previously each scanned differently and disagreed.
+//
+// Images are found in three ways, because no one of them sees everything:
+//
+//   - <img> tags, in the rendered HTML when the caller has it, and otherwise in
+//     the body itself, which catches raw HTML the Markdown renderer passes
+//     through untouched.
+//   - Markdown image syntax, filtered to image-looking paths.
+//   - Bare image URLs sitting in the text, which are neither tags nor Markdown
+//     images but have always been treated as the post's images.
+//
+// Rendered HTML is scanned as-is: the Markdown renderer has already escaped
+// anything inside a code block, so an example cannot be mistaken for markup.
+// The raw body has not been through that, so code is stripped from it first.
+func postImages(content, renderedHTML, base string) []postImage {
+	b, err := url.Parse(base)
+	baseUsable := err == nil && b.IsAbs()
+
+	var out []postImage
+	seen := map[string]bool{}
+
+	add := func(raw, alt string) {
+		resolved, ok := resolveImageURL(raw, b, baseUsable)
+		if !ok || seen[resolved] {
+			return
+		}
+		seen[resolved] = true
+		out = append(out, postImage{URL: resolved, Alt: strings.TrimSpace(alt)})
+	}
+
+	for _, img := range parseImages(renderedHTML) {
+		add(img.src, img.alt)
+	}
+
+	body := stripCode(content)
+
+	for _, img := range parseImages(body) {
+		add(img.src, img.alt)
+	}
+	for _, m := range imageMarkdownRegex.FindAllStringSubmatch(body, -1) {
+		target := strings.TrimSpace(m[2])
+		u, err := url.Parse(target)
+		if err != nil || !imageURLRegex.MatchString(u.Path) {
+			continue
+		}
+		add(target, m[1])
+	}
+	for _, u := range extractImages(body) {
+		add(u, "")
+	}
+
+	return out
+}
+
+// resolveImageURL makes one image reference absolute, reporting whether it is
+// usable. A relative reference with no base to resolve against is not: emitting
+// it raw would put an invalid URL where an absolute one is required.
+func resolveImageURL(raw string, base *url.URL, baseUsable bool) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+	ref, err := url.Parse(raw)
+	if err != nil {
+		return "", false
+	}
+	if !ref.IsAbs() {
+		if !baseUsable {
+			return "", false
+		}
+		ref = base.ResolveReference(ref)
+	}
+	return ref.String(), true
+}
+
+var (
+	fencedCodeRegex = regexp.MustCompile("(?s)```.*?```|(?s)~~~.*?~~~")
+	inlineCodeRegex = regexp.MustCompile("`[^`\n]*`")
+)
+
+// stripCode removes fenced code blocks and inline code spans from a Markdown
+// body, so that an image written as an example is not mistaken for one the post
+// displays. A post about HTML should not advertise its own sample as og:image.
+//
+// Indented code blocks are not handled: telling four-space indentation apart
+// from list continuation needs a real Markdown parse, and the callers that scan
+// a raw body are the ones without rendered HTML to hand.
+func stripCode(content string) string {
+	return inlineCodeRegex.ReplaceAllString(fencedCodeRegex.ReplaceAllString(content, "\n"), " ")
 }

@@ -145,37 +145,38 @@ func TestActivityObjectAttachesUploadedImages(t *testing.T) {
 
 const previewBase = "https://quigs.blog/"
 
-func TestAbsoluteImageURLsIncludesUploads(t *testing.T) {
+func TestPreviewImagesIncludesUploads(t *testing.T) {
 	content := "Intro.\n\n![pic](/uploads/2026/09/02/pic.png)\n"
 
-	got := absoluteImageURLs(content, nil, previewBase)
+	got := previewImages(content, nil, previewBase)
 
 	want := []string{"https://quigs.blog/uploads/2026/09/02/pic.png"}
 	assertURLs(t, want, got)
 }
 
-func TestAbsoluteImageURLsKeepsExternalImages(t *testing.T) {
+func TestPreviewImagesKeepsExternalImages(t *testing.T) {
 	content := "![pic](https://example.com/photo.jpg)\n"
 	extracted := []string{"https://example.com/photo.jpg"}
 
-	got := absoluteImageURLs(content, extracted, previewBase)
+	got := previewImages(content, extracted, previewBase)
 
 	assertURLs(t, []string{"https://example.com/photo.jpg"}, got)
 }
 
-func TestAbsoluteImageURLsSkipsNonImages(t *testing.T) {
+func TestPreviewImagesSkipsNonImages(t *testing.T) {
 	content := "[a page](/some-post)\n\n![notes](/uploads/notes.txt)\n"
 
-	if got := absoluteImageURLs(content, nil, previewBase); len(got) != 0 {
+	if got := previewImages(content, nil, previewBase); len(got) != 0 {
 		t.Errorf("wanted no images, got %v", got)
 	}
 }
 
-func TestAbsoluteImageURLsPreservesOrder(t *testing.T) {
-	content := "![a](/uploads/a.png)\n\n![b](/uploads/b.png)\n"
+func TestPreviewImagesPreservesOrder(t *testing.T) {
+	// Markdown images first, then bare URLs sitting in the text.
+	content := "![a](/uploads/a.png)\n\n![b](/uploads/b.png)\n\nAlso https://example.com/c.jpg\n"
 	extracted := []string{"https://example.com/c.jpg"}
 
-	got := absoluteImageURLs(content, extracted, previewBase)
+	got := previewImages(content, extracted, previewBase)
 
 	assertURLs(t, []string{
 		"https://quigs.blog/uploads/a.png",
@@ -187,17 +188,17 @@ func TestAbsoluteImageURLsPreservesOrder(t *testing.T) {
 // With no usable base a relative path cannot be made absolute, and emitting it
 // raw would put an invalid URL in og:image — worse than omitting the image,
 // which falls back to the blog avatar. Absolute images are still returned.
-func TestAbsoluteImageURLsDropsRelativeWhenBaseUnusable(t *testing.T) {
+func TestPreviewImagesDropsRelativeWhenBaseUnusable(t *testing.T) {
 	content := "![pic](/uploads/pic.png)\n\n![ext](https://example.com/photo.jpg)\n"
 	extracted := []string{"https://example.com/photo.jpg"}
 
-	got := absoluteImageURLs(content, extracted, "")
+	got := previewImages(content, extracted, "")
 
 	assertURLs(t, []string{"https://example.com/photo.jpg"}, got)
 }
 
-func TestAbsoluteImageURLsWithNoImages(t *testing.T) {
-	if got := absoluteImageURLs("Just words.", nil, previewBase); len(got) != 0 {
+func TestPreviewImagesWithNoImages(t *testing.T) {
+	if got := previewImages("Just words.", nil, previewBase); len(got) != 0 {
 		t.Errorf("wanted no images, got %v", got)
 	}
 }
@@ -236,4 +237,43 @@ func TestAnonymousPostAbsoluteImages(t *testing.T) {
 	got := p.AbsoluteImages("https://quigs.blog")
 
 	assertURLs(t, []string{"https://quigs.blog/uploads/pic.png"}, got)
+}
+
+// A post documenting HTML must not advertise its own examples as images.
+// Fenced blocks and inline spans are code, not markup.
+func TestPreviewImagesIgnoresCodeBlocks(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{"backtick fence", "Here is how:\n\n```\n<img src=\"/uploads/example.png\">\n```\n"},
+		{"tilde fence", "Here is how:\n\n~~~\n<img src=\"/uploads/example.png\">\n~~~\n"},
+		{"fence with language", "Here is how:\n\n```html\n<img src=\"/uploads/example.png\">\n```\n"},
+		{"inline span", "Write `<img src=\"/uploads/example.png\">` to embed it."},
+		{"markdown image in fence", "```\n![x](/uploads/example.png)\n```\n"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := previewImages(test.content, nil, previewBase); len(got) != 0 {
+				t.Errorf("code should yield no images, got %v", got)
+			}
+		})
+	}
+}
+
+// Fencing one image must not hide a real one elsewhere in the post.
+func TestPreviewImagesKeepsRealImagesAlongsideCode(t *testing.T) {
+	content := "```\n<img src=\"/uploads/example.png\">\n```\n\n![real](/uploads/real.png)\n"
+
+	got := previewImages(content, nil, previewBase)
+
+	assertURLs(t, []string{"https://quigs.blog/uploads/real.png"}, got)
+}
+
+// previewImages exercises the path og:image, twitter:image and the sitemap
+// take: a post with no rendered HTML to hand, as the sitemap has.
+func previewImages(content string, extracted []string, base string) []string {
+	p := &PublicPost{Post: &Post{Content: content, Images: extracted}}
+	return p.AbsoluteImages(base)
 }
