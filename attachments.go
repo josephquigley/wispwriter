@@ -118,3 +118,76 @@ func parseImages(content string) []parsedImage {
 	}
 	return images
 }
+
+// absoluteImageURLs returns every image the post references, as absolute URLs.
+//
+// og:image, twitter:image and the image sitemap all need absolute URLs: a
+// preview scraper or a search crawler fetches the page out of context and will
+// not resolve a relative one. p.Images alone is not enough, because
+// extractImages finds URLs with extract.ExtractUrls, which only recognises
+// those carrying a domain — an uploaded image, referenced as /uploads/...,
+// is invisible to it.
+//
+// Markdown image targets are gathered here instead, filtered to image-looking
+// paths, resolved against base, and unioned with the already-extracted URLs.
+// Order of appearance is preserved and duplicates dropped.
+//
+// A relative URL is dropped when base is unusable rather than emitted raw:
+// consumers fall back to the blog avatar when there is no image, which is
+// better than an invalid one.
+func absoluteImageURLs(content string, extracted []string, base string) []string {
+	b, err := url.Parse(base)
+	baseUsable := err == nil && b.IsAbs()
+
+	var out []string
+	seen := map[string]bool{}
+
+	add := func(raw string) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return
+		}
+		ref, err := url.Parse(raw)
+		if err != nil {
+			return
+		}
+		if !ref.IsAbs() {
+			if !baseUsable {
+				return
+			}
+			ref = b.ResolveReference(ref)
+		}
+		resolved := ref.String()
+		if seen[resolved] {
+			return
+		}
+		seen[resolved] = true
+		out = append(out, resolved)
+	}
+
+	for _, m := range imageMarkdownRegex.FindAllStringSubmatch(content, -1) {
+		target := m[2]
+		u, err := url.Parse(strings.TrimSpace(target))
+		if err != nil || !imageURLRegex.MatchString(u.Path) {
+			continue
+		}
+		add(target)
+	}
+	for _, u := range extracted {
+		add(u)
+	}
+
+	return out
+}
+
+// AbsoluteImages returns the post's images as absolute URLs, resolved against
+// base — the collection's canonical URL at every call site.
+func (p *PublicPost) AbsoluteImages(base string) []string {
+	return absoluteImageURLs(p.Content, p.Images, base)
+}
+
+// AbsoluteImages returns the post's images as absolute URLs, resolved against
+// base — the site host for a standalone post, which has no collection.
+func (p *AnonymousPost) AbsoluteImages(base string) []string {
+	return absoluteImageURLs(p.Content, p.Images, base)
+}

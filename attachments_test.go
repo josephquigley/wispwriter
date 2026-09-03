@@ -142,3 +142,98 @@ func TestActivityObjectAttachesUploadedImages(t *testing.T) {
 		t.Errorf("wanted alt text carried through, got %q", o.Attachment[0].Name)
 	}
 }
+
+const previewBase = "https://quigs.blog/"
+
+func TestAbsoluteImageURLsIncludesUploads(t *testing.T) {
+	content := "Intro.\n\n![pic](/uploads/2026/09/02/pic.png)\n"
+
+	got := absoluteImageURLs(content, nil, previewBase)
+
+	want := []string{"https://quigs.blog/uploads/2026/09/02/pic.png"}
+	assertURLs(t, want, got)
+}
+
+func TestAbsoluteImageURLsKeepsExternalImages(t *testing.T) {
+	content := "![pic](https://example.com/photo.jpg)\n"
+	extracted := []string{"https://example.com/photo.jpg"}
+
+	got := absoluteImageURLs(content, extracted, previewBase)
+
+	assertURLs(t, []string{"https://example.com/photo.jpg"}, got)
+}
+
+func TestAbsoluteImageURLsSkipsNonImages(t *testing.T) {
+	content := "[a page](/some-post)\n\n![notes](/uploads/notes.txt)\n"
+
+	if got := absoluteImageURLs(content, nil, previewBase); len(got) != 0 {
+		t.Errorf("wanted no images, got %v", got)
+	}
+}
+
+func TestAbsoluteImageURLsPreservesOrder(t *testing.T) {
+	content := "![a](/uploads/a.png)\n\n![b](/uploads/b.png)\n"
+	extracted := []string{"https://example.com/c.jpg"}
+
+	got := absoluteImageURLs(content, extracted, previewBase)
+
+	assertURLs(t, []string{
+		"https://quigs.blog/uploads/a.png",
+		"https://quigs.blog/uploads/b.png",
+		"https://example.com/c.jpg",
+	}, got)
+}
+
+// With no usable base a relative path cannot be made absolute, and emitting it
+// raw would put an invalid URL in og:image — worse than omitting the image,
+// which falls back to the blog avatar. Absolute images are still returned.
+func TestAbsoluteImageURLsDropsRelativeWhenBaseUnusable(t *testing.T) {
+	content := "![pic](/uploads/pic.png)\n\n![ext](https://example.com/photo.jpg)\n"
+	extracted := []string{"https://example.com/photo.jpg"}
+
+	got := absoluteImageURLs(content, extracted, "")
+
+	assertURLs(t, []string{"https://example.com/photo.jpg"}, got)
+}
+
+func TestAbsoluteImageURLsWithNoImages(t *testing.T) {
+	if got := absoluteImageURLs("Just words.", nil, previewBase); len(got) != 0 {
+		t.Errorf("wanted no images, got %v", got)
+	}
+}
+
+func assertURLs(t *testing.T, want, got []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("wanted %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("position %d: wanted %s, got %s", i, want[i], got[i])
+		}
+	}
+}
+
+// extractImages collected into a map and returned map iteration order, so a
+// post with several images produced a different order on every call — and
+// twitter:image, which takes only the first, picked one at random.
+func TestExtractImagesIsInOrderOfAppearance(t *testing.T) {
+	content := "![a](https://example.com/a.png)\n\n![b](https://example.com/b.png)\n\n![c](https://example.com/c.png)"
+	want := []string{
+		"https://example.com/a.png",
+		"https://example.com/b.png",
+		"https://example.com/c.png",
+	}
+
+	for i := 0; i < 20; i++ {
+		assertURLs(t, want, extractImages(content))
+	}
+}
+
+func TestAnonymousPostAbsoluteImages(t *testing.T) {
+	p := &AnonymousPost{Content: "![pic](/uploads/pic.png)"}
+
+	got := p.AbsoluteImages("https://quigs.blog")
+
+	assertURLs(t, []string{"https://quigs.blog/uploads/pic.png"}, got)
+}
