@@ -136,3 +136,64 @@ jobs:
           # failing with "failed to reserve cache". One writer is enough,
           # and pull request builds still get most of the speedup.
           cache-from: type=gha
+
+  backup:
+    name: backup sidecar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          # The in-job merge below needs real history, not a depth 1 clone,
+          # or git refuses it as unrelated histories.
+          fetch-depth: 0
+      - name: Merge the pull request branch
+        if: github.event_name == 'pull_request_target'
+        run: |
+          git fetch --no-tags origin "$HEAD_REF"
+          git -c user.name=ci -c user.email=ci@localhost \
+            merge --no-edit FETCH_HEAD
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      - name: Install restic, sqlite3 and shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends restic sqlite3 shellcheck
+      # The shell here gets the same gate the Go gets from gofmt.
+      - name: shellcheck
+        run: |
+          shellcheck -x docker/backup/entrypoint.sh \
+                        docker/backup/scripts/*.sh \
+                        docker/backup/drivers/*.sh \
+                        docker/backup/test/*.sh
+      - name: Unit and round-trip tests
+        run: bash docker/backup/test/run.sh
+      # Prove the image a deployment actually runs can back up and restore,
+      # not only the scripts in the checkout.
+      - name: Build the SQLite image
+        run: docker build -f docker/backup/Dockerfile.sqlite -t wf-backup:sqlite docker/backup
+      - name: SQLite round-trip through the image
+        run: bash docker/backup/test/roundtrip-sqlite.sh
+
+  backup-mysql:
+    name: backup sidecar (MariaDB)
+    # Pulls a MariaDB server and boots it, so it is slower than the rest of
+    # the suite. Split out so a slow pull does not hold up fast feedback.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          fetch-depth: 0
+      - name: Merge the pull request branch
+        if: github.event_name == 'pull_request_target'
+        run: |
+          git fetch --no-tags origin "$HEAD_REF"
+          git -c user.name=ci -c user.email=ci@localhost \
+            merge --no-edit FETCH_HEAD
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      - name: Build the MySQL image
+        run: docker build -f docker/backup/Dockerfile.mysql -t wf-backup:mysql docker/backup
+      - name: MariaDB round-trip against a real server
+        run: bash docker/backup/test/roundtrip-mysql.sh
