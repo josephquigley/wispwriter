@@ -78,3 +78,65 @@ services:
       start_period: 30s
 
     restart: unless-stopped
+
+  backup:
+    # Restic backups of the whole state directory, plus a database snapshot
+    # taken consistently rather than copied out from under a live writer.
+    # Off unless the profile is asked for:
+    #
+    #   docker compose --profile backup run --rm backup verify
+    #   docker compose --profile backup up -d
+    #
+    # Pinned by digest on a real deployment. The sidecar's tags are branch
+    # names, so an upgrade should be a deliberate edit here rather than a
+    # tag moving underneath a running container.
+    image: ${WRITEFREELY_BACKUP_IMAGE:-ghcr.io/josephquigley/writefreely-wisp-backup:main-mysql}
+
+    # Database credentials are deliberately absent. The sidecar reads them
+    # from config.ini in the state directory, so there is one copy of the
+    # password rather than two that drift apart.
+    environment:
+      # Not marked required: compose interpolates every service whether or
+      # not its profile is active, so a "?" here would force anyone running
+      # the stack without backups to set them. `backup verify` reports them
+      # missing instead.
+      - RESTIC_REPOSITORY=${RESTIC_REPOSITORY:-}
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD:-}
+      - RESTIC_CACHE_DIR=/cache
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - B2_ACCOUNT_ID=${B2_ACCOUNT_ID:-}
+      - B2_ACCOUNT_KEY=${B2_ACCOUNT_KEY:-}
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 3 * * *}
+      - BACKUP_KEEP_DAILY=${BACKUP_KEEP_DAILY:-7}
+      - BACKUP_KEEP_WEEKLY=${BACKUP_KEEP_WEEKLY:-4}
+      - BACKUP_KEEP_MONTHLY=${BACKUP_KEEP_MONTHLY:-6}
+      - BACKUP_KEEP_YEARLY=${BACKUP_KEEP_YEARLY:-2}
+      - BACKUP_HEALTHCHECK_URL=${BACKUP_HEALTHCHECK_URL:-}
+      - BACKUP_HEALTH_MAX_AGE=${BACKUP_HEALTH_MAX_AGE:-11520}
+      - BACKUP_SITE=${BACKUP_SITE:-writefreely}
+      # Where the restore checks whether the application is still running.
+      - APP_URL=http://app:8080/
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+
+    volumes:
+      # Read-write, because restore installs into it.
+      - ./data:/data
+      # A snapshot is extracted here first, so nothing lands on top of live
+      # data before someone has looked at it.
+      - ./data-restore:/restore
+      # Restic's cache would otherwise be rebuilt on every run, which makes
+      # every prune re-download the repository index.
+      - backup_cache:/cache
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    profiles: [backup]
+
+    restart: unless-stopped
+
+volumes:
+  backup_cache:
