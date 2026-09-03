@@ -141,8 +141,10 @@ jobs:
             # tag, so flattening it is safe here and nowhere else.
             echo "docker_tag=${version}-wisp"
             # A moving tag for the release series, so a deployment can pin
-            # v0.18 and take its patches without being re-pinned by hand.
-            echo "series_tag=v$(echo "$version" | cut -d. -f1,2)"
+            # 0.18-wisp and take its patches without being re-pinned by hand.
+            # Suffixed like the immutable tag: this repository carries every
+            # upstream tag, and a bare v0.18 would read as one of those.
+            echo "series_tag=$(echo "$version" | cut -d. -f1,2)-wisp"
             echo "previous=${previous}"
           } >> "$GITHUB_OUTPUT"
 
@@ -238,7 +240,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           docker_tag="${version//+/-}"
-          series_tag="v$(echo "$version" | cut -d. -f1,2)"
+          series_tag="$(echo "$version" | cut -d. -f1,2)-wisp"
           source="${IMAGE}:sha-${GITHUB_SHA::7}"
           docker buildx imagetools inspect "$source" >/dev/null 2>&1 || {
             echo "no image at ${source}. Push the tag only after the branch"

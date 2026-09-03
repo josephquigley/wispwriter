@@ -90,10 +90,10 @@ Three kinds of image tag are published:
 | Tag | Moves? | Use it when |
 |---|---|---|
 | `latest` | every release | you want whatever is newest |
-| `v0.18` | every patch in that series | you want fixes but not a minor bump |
+| `0.18-wisp` | every patch in that series | you want fixes but not a minor bump |
 | `0.18.1-wisp` | never | you want exactly one build |
 
-A series tag such as `v0.18` is the usual choice for a deployment: patch
+A series tag such as `0.18-wisp` is the usual choice for a deployment: patch
 releases arrive on a `docker compose pull`, while a `0.19` would not.
 
 ## File ownership
