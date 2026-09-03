@@ -1,0 +1,7 @@
+# Scripts source each other by relative path at runtime. SCRIPTDIR makes
+# shellcheck resolve those the same way, so `shellcheck -x` follows them
+# instead of reporting every source line as unreadable.
+external-sources=true
+source-path=SCRIPTDIR
+source-path=SCRIPTDIR/../scripts
+source-path=SCRIPTDIR/../drivers
