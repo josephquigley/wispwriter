@@ -212,7 +212,13 @@ func uploadHeaders(next http.Handler) http.Handler {
 // body can be scanned for the ones it uses. It captures the stored path,
 // which is what identifies the image now that the URL no longer carries its
 // hash.
-var imageURLPattern = regexp.MustCompile(`/` + uploadsDir + `/([0-9]{4}/[0-9]{2}/[0-9]{2}/[a-z0-9-]+\.[a-z0-9]+)`)
+// The filename character class must cover everything imageSlug can emit.
+// slug.Make keeps underscores, so a name like IMG_1234.jpg produced a stored
+// path this pattern could not match: the upload then looked unreferenced,
+// was never attached to its post, and the orphan sweep deleted it a day
+// later while the post still displayed it. Dots are allowed for the same
+// reason -- to fail safe if the slugifier ever stops stripping them.
+var imageURLPattern = regexp.MustCompile(`/` + uploadsDir + `/([0-9]{4}/[0-9]{2}/[0-9]{2}/[a-z0-9._-]+\.[a-z0-9]+)`)
 
 // attachPostImages records which of the user's uploaded images the given post
 // body uses, so the images stop being orphans and can be cleaned up with the

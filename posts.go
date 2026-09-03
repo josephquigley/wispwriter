@@ -1287,7 +1287,10 @@ func (p *PublicPost) ActivityObject(app *App) *activitystreams.Object {
 		p.formatContent(cfg, false, false)
 		p.augmentReadingDestination()
 	}
-	o.Content = string(p.HTMLContent)
+	// Resolve relative URLs before the content leaves this instance: a remote
+	// server resolves what it receives against its own address, not ours.
+	syndicated := syndicatedContent(p, o.URL)
+	o.Content = syndicated
 	if o.Type == "Note" && p.Title.String != "" {
 		// Render the explicitly-set title inside the Note, since Mastodon (at least) doesn't show the `name`
 		// property on Notes.
@@ -1295,7 +1298,7 @@ func (p *PublicPost) ActivityObject(app *App) *activitystreams.Object {
 	}
 	if p.Language.Valid {
 		o.ContentMap = map[string]string{
-			p.Language.String: string(p.HTMLContent),
+			p.Language.String: syndicated,
 		}
 	}
 	if len(p.Tags) == 0 {
@@ -1319,16 +1322,9 @@ func (p *PublicPost) ActivityObject(app *App) *activitystreams.Object {
 			})
 		}
 	}
-	if len(p.Images) > 0 {
-		altText := extractImageAltText(p.Content)
-		for _, i := range p.Images {
-			img := activitystreams.NewImageAttachment(i)
-			if alt, ok := altText[i]; ok {
-				img.Name = alt
-			}
-			o.Attachment = append(o.Attachment, img)
-		}
-	}
+	// Mastodon strips <img> from content and renders media only from the
+	// attachment array, so an inline-only image does not display there.
+	o.Attachment = imageAttachments(syndicated, p.Images, extractImageAltText(p.Content), o.URL)
 	// Find mentioned users
 	mentionedUsers := make(map[string]string)
 
@@ -1823,7 +1819,10 @@ func extractImageAltText(content string) map[string]string {
 
 func extractImages(content string) []string {
 	matches := extract.ExtractUrls(content)
-	urls := map[string]bool{}
+	// Order of appearance, not map iteration order: twitter:image renders only
+	// the first image, so a random order made it a different image per request.
+	seen := map[string]bool{}
+	resURLs := make([]string, 0)
 	for i := range matches {
 		uRaw := matches[i].Text
 		// Parse the extracted text so we can examine the path
@@ -1835,12 +1834,11 @@ func extractImages(content string) []string {
 		if !imageURLRegex.MatchString(u.Path) {
 			continue
 		}
-		urls[uRaw] = true
-	}
-
-	resURLs := make([]string, 0)
-	for k := range urls {
-		resURLs = append(resURLs, k)
+		if seen[uRaw] {
+			continue
+		}
+		seen[uRaw] = true
+		resURLs = append(resURLs, uRaw)
 	}
 	return resURLs
 }

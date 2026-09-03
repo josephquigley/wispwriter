@@ -108,7 +108,7 @@ func ViewFeed(app *App, w http.ResponseWriter, req *http.Request) error {
 			Title:       title,
 			Link:        &feeds.Link{Href: permalink},
 			Description: "<![CDATA[" + stripmd.Strip(p.Content) + "]]>",
-			Content:     string(p.HTMLContent),
+			Content:     syndicatedContent(&p, permalink),
 			Author:      &feeds.Author{author, ""},
 			Created:     p.Created,
 			Updated:     p.Updated,

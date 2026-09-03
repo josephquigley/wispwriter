@@ -140,6 +140,11 @@ jobs:
             # Image tags may not contain "+". Ordering means nothing to a
             # tag, so flattening it is safe here and nowhere else.
             echo "docker_tag=${version}-wisp"
+            # A moving tag for the release series, so a deployment can pin
+            # 0.18-wisp and take its patches without being re-pinned by hand.
+            # Suffixed like the immutable tag: this repository carries every
+            # upstream tag, and a bare v0.18 would read as one of those.
+            echo "series_tag=$(echo "$version" | cut -d. -f1,2)-wisp"
             echo "previous=${previous}"
           } >> "$GITHUB_OUTPUT"
 
@@ -203,6 +208,7 @@ jobs:
         if: steps.decide.outputs.release == 'true'
         env:
           DOCKER_TAG: ${{ steps.decide.outputs.docker_tag }}
+          SERIES_TAG: ${{ steps.decide.outputs.series_tag }}
         run: |
           source="${IMAGE}:sha-${GITHUB_SHA::7}"
           docker buildx imagetools inspect "$source" >/dev/null 2>&1 || {
@@ -211,6 +217,7 @@ jobs:
             exit 1
           }
           docker buildx imagetools create -t "${IMAGE}:${DOCKER_TAG}" "$source"
+          docker buildx imagetools create -t "${IMAGE}:${SERIES_TAG}" "$source"
           docker buildx imagetools create -t "${IMAGE}:latest" "$source"
 
   retag:
@@ -233,6 +240,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           docker_tag="${version//+/-}"
+          series_tag="$(echo "$version" | cut -d. -f1,2)-wisp"
           source="${IMAGE}:sha-${GITHUB_SHA::7}"
           docker buildx imagetools inspect "$source" >/dev/null 2>&1 || {
             echo "no image at ${source}. Push the tag only after the branch"
@@ -240,4 +248,5 @@ jobs:
             exit 1
           }
           docker buildx imagetools create -t "${IMAGE}:${docker_tag}" "$source"
+          docker buildx imagetools create -t "${IMAGE}:${series_tag}" "$source"
           docker buildx imagetools create -t "${IMAGE}:latest" "$source"
