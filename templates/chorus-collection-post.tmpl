@@ -21,14 +21,15 @@
 		<meta name="twitter:card" content="summary">
 		<meta name="twitter:description" content="{{.Summary}}">
 		<meta name="twitter:title" content="{{.PlainDisplayTitle}} {{localhtml "title dash" .Language.String}} {{if .Collection.Title}}{{.Collection.Title}}{{else}}{{.Collection.Alias}}{{end}}">
-		{{if gt (len .Images) 0}}<meta name="twitter:image" content="{{index .Images 0}}">{{else}}<meta name="twitter:image" content="{{.Collection.AvatarURL}}">{{end}}
+		{{$images := .AbsoluteImages .Collection.CanonicalURL}}
+		{{if gt (len $images) 0}}<meta name="twitter:image" content="{{index $images 0}}">{{else}}<meta name="twitter:image" content="{{.Collection.AvatarURL}}">{{end}}
 		<meta property="og:title" content="{{.PlainDisplayTitle}}" />
 		<meta property="og:description" content="{{.Summary}}" />
 		<meta property="og:site_name" content="{{.Collection.DisplayTitle}}" />
 		<meta property="og:type" content="article" />
 		<meta property="og:url" content="{{.CanonicalURL .Host}}" />
 		<meta property="og:updated_time" content="{{.Created8601}}" />
-		{{range .Images}}<meta property="og:image" content="{{.}}" />{{else}}<meta property="og:image" content="{{.Collection.AvatarURL}}">{{end}}
+		{{range $images}}<meta property="og:image" content="{{.}}" />{{else}}<meta property="og:image" content="{{$.Collection.AvatarURL}}">{{end}}
 		<meta property="article:published_time" content="{{.Created8601}}">
 		{{template "collection-meta" .}}
 		{{if .Collection.StyleSheet}}<style type="text/css">{{.Collection.StyleSheetDisplay}}</style>{{end}}

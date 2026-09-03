@@ -24,13 +24,14 @@
 		<meta name="twitter:description" content="{{.Description}}">
 		{{if gt .Views 1}}<meta name="twitter:label1" value="Views">
 		<meta name="twitter:data1" value="{{largeNumFmt .Views}}">{{end}}
-		{{if gt (len .Images) 0}}<meta name="twitter:image" content="{{index .Images 0}}">{{else}}<meta name="twitter:image" content="{{.Host}}/img/wf-sq.png">{{end}}
+		{{$images := .AbsoluteImages .Host}}
+		{{if gt (len $images) 0}}<meta name="twitter:image" content="{{index $images 0}}">{{else}}<meta name="twitter:image" content="{{.Host}}/img/wf-sq.png">{{end}}
 		<meta property="og:title" content="{{if .Title}}{{.Title}}{{else}}{{.GenTitle}}{{end}}" />
 		<meta property="og:site_name" content="{{.SiteName}}" />
 		<meta property="og:type" content="article" />
 		<meta property="og:url" content="{{.Host}}/{{if .SingleUser}}d/{{end}}{{.ID}}" />
 		<meta property="og:description" content="{{.Description}}" />
-		{{range .Images}}<meta property="og:image" content="{{.}}" />{{else}}<meta property="og:image" content="{{.Host}}/img/wf-sq.png">{{end}}
+		{{range $images}}<meta property="og:image" content="{{.}}" />{{else}}<meta property="og:image" content="{{$.Host}}/img/wf-sq.png">{{end}}
 		{{if .Author}}<meta property="article:author" content="https://{{.Author}}" />{{end}}
 		<!-- Add highlighting logic -->
 		{{template "highlighting" .}}
