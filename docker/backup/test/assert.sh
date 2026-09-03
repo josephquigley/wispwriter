@@ -18,6 +18,33 @@ assert_eq() {
     fi
 }
 
+assert_contains() {
+    local haystack="$1" needle="$2" name="$3"
+    case "$haystack" in
+        *"$needle"*)
+            echo "PASS: $name"
+            ASSERT_PASS=$((ASSERT_PASS + 1)) ;;
+        *)
+            echo "FAIL: $name"
+            echo "        expected to contain: [$needle]"
+            echo "        actual:              [$haystack]"
+            ASSERT_FAIL=$((ASSERT_FAIL + 1)) ;;
+    esac
+}
+
+assert_not_contains() {
+    local haystack="$1" needle="$2" name="$3"
+    case "$haystack" in
+        *"$needle"*)
+            echo "FAIL: $name"
+            echo "        expected NOT to contain: [$needle]"
+            ASSERT_FAIL=$((ASSERT_FAIL + 1)) ;;
+        *)
+            echo "PASS: $name"
+            ASSERT_PASS=$((ASSERT_PASS + 1)) ;;
+    esac
+}
+
 # Passes when the command exits non-zero.
 assert_fails() {
     local name="$1"; shift
