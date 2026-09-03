@@ -1,0 +1,32 @@
+FROM mariadb:11.4
+
+LABEL org.opencontainers.image.source="https://github.com/josephquigley/writefreely-wisp"
+LABEL org.opencontainers.image.description="Restic backup sidecar for WriteFreely (MySQL/MariaDB)"
+LABEL org.opencontainers.image.licenses="AGPL-3.0"
+
+# The client comes with the base image, which is the point of using it: the
+# dump and restore tools match the server series the compose stacks run.
+# Restic is not packaged for this base, so it comes from the project's own
+# releases, pinned.
+ARG RESTIC_VERSION=0.17.3
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends bzip2 ca-certificates curl; \
+    arch="$(uname -m | sed 's/aarch64/arm64/; s/x86_64/amd64/')"; \
+    curl -fsSL "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${arch}.bz2" \
+        | bunzip2 > /usr/local/bin/restic; \
+    chmod +x /usr/local/bin/restic; \
+    apt-get purge -y bzip2; \
+    apt-get autoremove -y; \
+    rm -rf /var/lib/apt/lists/*
+
+COPY entrypoint.sh /entrypoint.sh
+COPY scripts/ /scripts/
+COPY drivers/ /drivers/
+
+RUN chmod +x /entrypoint.sh /scripts/*.sh
+
+HEALTHCHECK --interval=5m --timeout=10s --start-period=2m --retries=3 \
+    CMD ["/scripts/healthcheck.sh"]
+
+ENTRYPOINT ["/entrypoint.sh"]

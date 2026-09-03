@@ -4,6 +4,11 @@ cd "$(dirname "$0")" || exit 1
 # shellcheck source=./assert.sh
 source ./assert.sh
 
+if ! command -v perl >/dev/null 2>&1; then
+    echo "SKIP: perl not installed (needed to age files portably)"
+    exit 0
+fi
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 

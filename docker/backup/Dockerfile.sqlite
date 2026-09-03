@@ -1,0 +1,21 @@
+FROM alpine:3.21
+
+LABEL org.opencontainers.image.source="https://github.com/josephquigley/writefreely-wisp"
+LABEL org.opencontainers.image.description="Restic backup sidecar for WriteFreely (SQLite)"
+LABEL org.opencontainers.image.licenses="AGPL-3.0"
+
+# bash, because the scripts use arrays and [[ ]]. restic comes from Alpine's
+# repository rather than a GitHub release: it is packaged, signed and updated
+# there, which is one less thing to verify by hand.
+RUN apk add --no-cache bash restic sqlite curl coreutils findutils tzdata
+
+COPY entrypoint.sh /entrypoint.sh
+COPY scripts/ /scripts/
+COPY drivers/ /drivers/
+
+RUN chmod +x /entrypoint.sh /scripts/*.sh
+
+HEALTHCHECK --interval=5m --timeout=10s --start-period=2m --retries=3 \
+    CMD ["/scripts/healthcheck.sh"]
+
+ENTRYPOINT ["/entrypoint.sh"]
