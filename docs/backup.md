@@ -14,11 +14,11 @@ The database needs care rather than a file copy. A running instance is writing t
 
 ## Adding it
 
-Pick the image variant matching your `[database] type`: `-sqlite` for `sqlite3`, `-mysql` for `mysql`. Then add a service to your compose file, under a profile so it stays off until you ask for it:
+There is one image per database, so pick the one matching your `[database] type`: `writefreely-backup-sqlite` for `sqlite3`, `writefreely-backup-mysql` for `mysql`. Both ship both drivers and differ only in which client is installed, so the wrong one fails at startup rather than at pull time (it says which image you want, but it is still a surprise you do not need). Then add a service to your compose file, under a profile so it stays off until you ask for it:
 
 ```yaml
   backup:
-    image: ghcr.io/josephquigley/writefreely-backup:main-sqlite
+    image: ghcr.io/josephquigley/writefreely-backup-sqlite:latest
     restart: unless-stopped
     # Match the user the app container runs as, so a restore writes files
     # it can read.
@@ -51,7 +51,7 @@ volumes:
   backup_cache:
 ```
 
-On the MariaDB stack, use the `-mysql` image and add `depends_on: db: condition: service_healthy`. Add the restic and storage variables to your `.env`, then:
+On the MariaDB stack, use `writefreely-backup-mysql` and add `depends_on: db: condition: service_healthy`. Add the restic and storage variables to your `.env`, then:
 
 ```sh
 mkdir -p data-restore
@@ -61,7 +61,7 @@ docker compose --profile backup up -d
 
 `verify` checks everything before you trust a schedule to it: the environment, `config.ini`, the database connection, room in `/tmp` for the staged copy, and the repository, initialising it if it is new.
 
-Pin by digest once it works. The image's tags are branch names and short shas by design, so an upgrade should be a deliberate edit rather than a tag moving underneath a running container.
+Pin by digest once it works, so an upgrade is a deliberate edit rather than a tag moving underneath a running container. Each package carries `latest` and `main` following its default branch, `sha-xxxxxxx` for an exact commit, and `1` / `1.4` / `1.4.2` once there is a release to pin to.
 
 ## RESTIC_PASSWORD is the secret that matters
 
