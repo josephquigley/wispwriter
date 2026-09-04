@@ -1,0 +1,142 @@
+// Dark mode for the application surfaces: everything under /me, the admin
+// section, and the sign-in and password-reset pages.
+//
+// WHY THIS IS A SCOPED OVERRIDE AND NOT A PALETTE REFACTOR
+//
+// The tidier way to do this is to replace the hardcoded colours in core.less
+// with variables (or custom properties) and give them a light and a dark
+// value. That would share one palette between both schemes instead of
+// restating it, and it would let a blog's own Custom CSS retheme by
+// reassigning a few tokens rather than redeclaring every rule.
+//
+// This does not do that, for one reason: core.less is shared with the
+// published blog pages. Tokenising it would change how readers see every
+// collection on the instance. Whether an author's own tools follow their
+// desktop and what a stranger sees when they open someone's blog are two
+// different decisions, and only the first one is being made here. Making
+// the second one silently, as a side effect, would be worse than the
+// duplication below.
+//
+// So these rules are additive. They are scoped to the two body ids that
+// identify the application surfaces, and never to a bare `body`, which
+// would leak onto the Reader (read.tmpl sets id="collection") and onto
+// published blogs. If a third app surface appears, add its id here rather
+// than widening the selector.
+//
+// The palette is pad-theme.less's own, referenced rather than copied. A
+// writer moving from the editor to their post list should not cross a seam
+// between two different darks, and one definition cannot drift from itself.
+
+// Derived from the pad palette above; these have no pad equivalent because
+// the editor has no tables, form sections or muted secondary text.
+@darkMutedTextColor: #999;
+@darkInputBG: #2b2b2b;
+@darkCodeBG: #2b2b2b;
+
+@media (prefers-color-scheme: dark) {
+	body#me, body#login {
+		// Tells the browser to render form controls, scrollbars and the
+		// canvas dark too. Without it the widgets stay light and sit on the
+		// page like cut-outs.
+		color-scheme: dark;
+
+		background-color: @darkBG;
+		color: @darkTextColor;
+
+		h1, h2, h3, h4, h5, h6 {
+			color: @darkTextColor;
+		}
+
+		a {
+			&:link, &:visited {
+				color: @darkLinkColor;
+			}
+			&:hover {
+				color: @darkTextColor;
+			}
+		}
+
+		hr {
+			border-color: @darkNavBorder;
+		}
+
+		// Navigation: the /me header, the admin pager, and the footer.
+		nav {
+			a {
+				&:link, &:visited {
+					color: @darkLinkColor;
+				}
+				&:hover {
+					color: @darkTextColor;
+				}
+				&.selected {
+					color: @darkTextColor;
+				}
+			}
+		}
+
+		header {
+			&.admin {
+				h1 {
+					color: @darkTextColor;
+				}
+			}
+		}
+
+		footer nav {
+			color: @darkMutedTextColor;
+
+			a {
+				&:link, &:visited {
+					color: @darkMutedTextColor;
+				}
+				&:hover, &.home {
+					color: @darkTextColor;
+				}
+			}
+		}
+
+		// Form controls. `color-scheme` above handles the browser's own
+		// widget chrome; these are the ones the stylesheet paints itself.
+		input[type="text"], input[type="email"], input[type="password"],
+		input[type="url"], input[type="search"], input[type="number"],
+		textarea, select {
+			background-color: @darkInputBG;
+			border-color: @darkNavBorder;
+			color: @darkTextColor;
+
+			&::placeholder {
+				color: @darkMutedTextColor;
+			}
+		}
+
+		textarea.section {
+			border-color: @darkNavBorder;
+		}
+
+		// Tables: the post list, the export list, the admin user and page
+		// listings.
+		table.classy {
+			tr + tr {
+				border-top-color: @darkNavBorder;
+			}
+			&.export .disabled {
+				color: @darkMutedTextColor;
+			}
+		}
+
+		// Code shown in the app rather than in a post: the config snippets
+		// on the admin pages, and anything a user pastes into a form.
+		pre, code {
+			background-color: @darkCodeBG;
+			border-color: @darkNavBorder;
+			color: @darkTextColor;
+		}
+
+		// Secondary text the light theme greys out. Left as one rule
+		// because every one of these is the same intent: de-emphasised.
+		.subtitle, .description, .meta, .disabled {
+			color: @darkMutedTextColor;
+		}
+	}
+}

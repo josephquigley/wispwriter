@@ -1,3 +1,11 @@
+{{/* The sign-in pages render through base.tmpl, whose body carries no id
+     of its own, so the stylesheet has nothing to hang a rule on. dark.less
+     scopes its overrides to body ids rather than to a bare `body`, to keep
+     them off the Reader and off published blogs, so these pages have to
+     name themselves. base.tmpl's own {{define "body-attrs"}} is empty, and
+     an empty definition does not replace one parsed earlier, which is why
+     this wins despite base.tmpl being parsed after this file. */}}
+{{define "body-attrs"}}id="login"{{end}}
 {{define "head"}}<title>Log in &mdash; {{.SiteName}}</title>
 <meta name="description" content="Log into {{.SiteName}}.">
 <meta itemprop="description" content="Log into {{.SiteName}}.">
