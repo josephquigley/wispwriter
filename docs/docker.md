@@ -195,6 +195,27 @@ there, as above. Left unset they default inside the asset tree that ships
 with the image, where the next `docker compose pull && up -d` discards
 them.
 
+## Custom CSS
+
+The instance-wide stylesheet at `/local/custom.css` is the only one that reaches the post editor and the admin pages. See [custom CSS](custom-css.md) for what it is and how it differs from the per-blog setting.
+
+It lives in the image's asset tree, so mount it in. Create the file first: Docker binds it by inode at container start, and if it does not exist it creates a directory there instead.
+
+```sh
+touch ./data/custom.css
+```
+
+```yaml
+  app:
+    volumes:
+      - ./data:/data
+      - ./data/custom.css:/usr/share/writefreely/static/local/custom.css:ro
+```
+
+Editing in place (`cat >>`, `cat >`) is picked up on the next page load. An editor that replaces the file, which is vim by default and most GUI editors, leaves the container serving the old inode until you run `docker compose up -d --force-recreate app`.
+
+Do not mount over `/usr/share/writefreely` or its `static` directory. That masks the templates and pages the binary needs.
+
 ## Environment variables
 
 Read from `.env` by both compose files:
