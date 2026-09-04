@@ -1,112 +1,85 @@
 # Backups
 
-Backups are a compose profile, and they are off until you ask for them. When you do, a side-container takes a consistent snapshot of the database, hands it to [restic](https://restic.net) along with the state directory, encrypts everything, and uploads it to whatever storage you point it at.
+Nothing in this repository backs your instance up. Backups are a side-container you add to your own compose file, built and published separately at [josephquigley/writefreely-backup](https://github.com/josephquigley/writefreely-backup). That repository is the reference; this page is the short version and the reason it is worth doing.
 
-## What it backs up, and why the keys matter most
+It takes a consistent snapshot of the database, hands it to [restic](https://restic.net) along with the state directory, encrypts everything, and uploads it wherever you point it. It works against stock WriteFreely as well as this fork, and it reads its database credentials from `config.ini` rather than needing them again in `.env`.
 
-Everything under the state directory: `config.ini`, `keys/`, `uploads/`, any legacy image tree you have put there, and the database. Exclusions are opt-in, and the only ones are the live database file and its journal siblings, which are replaced in the snapshot by a copy taken consistently.
+## Back up the state directory, and understand what is in it
 
-`keys/` is the reason this matters more than it looks. It holds the instance's federation keypair. Posts can be reconstructed from an API export, and images can be re-uploaded, but the keypair cannot be regenerated: every remote server that already knows this actor has its public key, and a new one means every signature it sends is rejected from then on. Losing that directory means losing the instance's identity on the network, permanently, whatever else survives.
+Everything the instance owns lives in one directory, mounted at `/data`: `config.ini`, `keys/`, `uploads/`, the SQLite database if you use one. Backing up that directory and the database is the whole job.
 
-## Getting started
+`keys/` is the part people underestimate. It holds the instance's federation keypair. Posts can be re-imported from an export and images can be re-uploaded, but the keypair cannot be regenerated: every remote server that already knows this actor holds its public key, and a new one means every signature it sends is rejected from then on. Losing that directory costs the instance its identity on the network, whatever else survives.
 
-Fill in the backup block in `.env`. At minimum that is `RESTIC_REPOSITORY`, `RESTIC_PASSWORD` and the credentials for your storage backend.
+The database needs care rather than a file copy. A running instance is writing to it, and `cp` can capture a page torn mid-transaction: the copy looks fine until you restore it. The sidecar takes SQLite snapshots through the online backup API and dumps MySQL with `--single-transaction`, then verifies the result before storing it.
 
-Check the configuration before trusting it to a schedule:
+## Adding it
 
-```sh
-docker compose --profile backup run --rm backup verify
+Pick the image variant matching your `[database] type`: `-sqlite` for `sqlite3`, `-mysql` for `mysql`. Then add a service to your compose file, under a profile so it stays off until you ask for it:
+
+```yaml
+  backup:
+    image: ghcr.io/josephquigley/writefreely-backup:main-sqlite
+    restart: unless-stopped
+    # Match the user the app container runs as, so a restore writes files
+    # it can read.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-}
+      RESTIC_CACHE_DIR: /cache
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      BACKUP_SCHEDULE: 0 3 * * *
+      BACKUP_KEEP_DAILY: 7
+      BACKUP_KEEP_WEEKLY: 4
+      BACKUP_KEEP_MONTHLY: 6
+      BACKUP_HEALTHCHECK_URL: ${BACKUP_HEALTHCHECK_URL:-}
+      # Size to BACKUP_SCHEDULE plus grace. 2880 is two days, for a daily
+      # schedule; the 11520 default suits a weekly one.
+      BACKUP_HEALTH_MAX_AGE: 2880
+      BACKUP_SITE: my-blog
+      APP_URL: http://app:8080/
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      - ./data:/data
+      - ./data-restore:/restore
+      - backup_cache:/cache
+    profiles: [backup]
+
+volumes:
+  backup_cache:
 ```
 
-That validates the environment, reads `config.ini`, connects to the database, checks there is room in `/tmp` for the staged copy, and reaches the repository, initialising it when it does not exist yet. It reports every problem it finds rather than stopping at the first.
-
-Then start the scheduler:
+On the MariaDB stack, use the `-mysql` image and add `depends_on: db: condition: service_healthy`. Add the restic and storage variables to your `.env`, then:
 
 ```sh
+mkdir -p data-restore
+docker compose --profile backup run --rm backup verify
 docker compose --profile backup up -d
 ```
 
-It backs up on `BACKUP_SCHEDULE` and applies the retention policy after each run. To take one immediately:
+`verify` checks everything before you trust a schedule to it: the environment, `config.ini`, the database connection, room in `/tmp` for the staged copy, and the repository, initialising it if it is new.
 
-```sh
-docker compose --profile backup run --rm backup backup
-```
-
-## Database credentials come from config.ini
-
-The sidecar reads `[database]` out of `config.ini` in the state directory, which it already mounts. There is nothing to configure and no database password in `.env`, because a second copy of a password is a second thing to leak and a second thing to drift out of step with the first.
-
-Both engines are supported, and the image variant has to match the one you run. `type = sqlite3` needs the `-sqlite` image, `type = mysql` needs the `-mysql` one. The SQLite variant takes its snapshot through SQLite's online backup API, which is consistent against a running instance without stopping it; the MySQL variant dumps with `--single-transaction`, which is consistent for the same reason.
-
-## Where snapshots go
-
-The sidecar has no opinion. It consumes `RESTIC_REPOSITORY` and `RESTIC_PASSWORD` and backs up to whatever they name: S3, Backblaze B2, an S3-compatible provider, SFTP, or a local path.
-
-Give WriteFreely its own repository with its own password rather than sharing one with another service. Retention policies then stay independent, a mistake in one cannot prune the other, and two stacks do not contend for the repository lock.
+Pin by digest once it works. The image's tags are branch names and short shas by design, so an upgrade should be a deliberate edit rather than a tag moving underneath a running container.
 
 ## RESTIC_PASSWORD is the secret that matters
 
-Snapshots contain `config.ini`, and `config.ini` can contain mail credentials. They are encrypted, so whoever holds `RESTIC_PASSWORD` plus read access to the storage holds those credentials too. Treat it accordingly.
+Snapshots contain `config.ini`, and on most instances `config.ini` contains mail credentials. They are encrypted, so whoever holds `RESTIC_PASSWORD` plus read access to the storage holds those credentials too.
 
-Store it somewhere that survives the server. A password that only exists in the `.env` on the machine you are backing up is not a backup password, it is a coincidence: the disaster that makes you need the backup is the one that takes the password with it. A backup you cannot decrypt is not a backup.
+Store it somewhere that survives the server. A password that exists only in the `.env` on the machine being backed up is not a backup password, it is a coincidence: the disaster that makes you need the backup is the one that takes the password with it. A backup you cannot decrypt is not a backup.
 
 ## Restoring
 
-Stop WriteFreely first. The sidecar refuses to restore while the application answers on the network, because writing a database out from under a running process corrupts it. It cannot stop the container for you: doing that would mean mounting the Docker socket, which is root on the host handed to a backup script, and that is a bad trade for saving one command.
+Stop the app first. The sidecar refuses to restore while WriteFreely answers on the network, because writing a database out from under a running process corrupts it.
 
 ```sh
 docker compose stop app
 docker compose --profile backup run --rm backup restore latest
 ```
 
-The snapshot is extracted into a separate staging mount first, so nothing lands on top of live data before you have seen what is in it. Then it asks about each component separately: the database, `keys/`, `uploads/`, `legacy-images/` and `config.ini`. Answer only for what you actually want back.
+It asks about each component separately, keeps whatever it replaces as `<name>.bak-<timestamp>`, and rolls a component back if it fails to install. `config.ini` defaults to no: an older one can point `filename` and `[uploads] dir` at `/var/lib/writefreely`, which this image stopped using in 0.18.0, and restoring it onto a `/data` install produces the `no config.ini found` crash loop described in [docker.md](docker.md).
 
-Whatever a component replaces is kept as `<name>.bak-<timestamp>` rather than deleted, and if a component fails to install, the original is moved back. A wrong answer at a prompt is recoverable. Remove the `.bak-*` copies by hand once you are satisfied, since nothing else will.
+Rehearse a restore against a scratch copy before you need one. An untested backup is a hypothesis.
 
-`config.ini` defaults to no, and is skipped entirely by `--yes`. An older config points its `filename` and `[uploads] dir` at a state directory that this image no longer uses, and dropping one onto a current install produces a container that crash-loops on a config it cannot find. Restore it only when you specifically mean to, with `--components=config`.
-
-For scripted or tested restores, `--yes` answers the prompts and `--components=database,keys` chooses exactly what to install.
-
-To see what is available first:
-
-```sh
-docker compose --profile backup run --rm backup snapshots
-```
-
-## Monitoring
-
-The container reports unhealthy unless three things hold: the scheduler is alive, the last run succeeded, and that run was recent. A container that is up but has silently stopped backing anything up is the failure worth catching, and Docker's own "up" status does not catch it.
-
-Size `BACKUP_HEALTH_MAX_AGE` to your schedule plus some grace. It is in minutes, and the default of 11520 is eight days, which suits a weekly schedule. A daily schedule wants something closer to 2880.
-
-Set `BACKUP_HEALTHCHECK_URL` to be told from outside. The URL is pinged after a successful run, and with `/fail` appended after a failed one, which is what [healthchecks.io](https://healthchecks.io) and Uptime Kuma expect. Monitoring is best-effort throughout: an unreachable endpoint is never allowed to fail the backup it is monitoring.
-
-## Verify that it is real
-
-Run a restore once, into a scratch copy of the state directory, before you need one. An untested backup is a hypothesis. `verify` proves the repository is reachable and `snapshots` proves something was written, but neither proves the contents are usable, and the day you find out otherwise is the worst possible day to find out.
-
-`docker compose --profile backup run --rm backup stats` reports what the repository is holding, and `unlock` clears a stale lock left by an interrupted run.
-
-## Environment variables
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `RESTIC_REPOSITORY` | required | where snapshots go |
-| `RESTIC_PASSWORD` | required | the encryption password |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | | S3 and S3-compatible storage |
-| `B2_ACCOUNT_ID`, `B2_ACCOUNT_KEY` | | Backblaze B2 |
-| `BACKUP_SCHEDULE` | `0 3 * * *` | cron expression |
-| `BACKUP_KEEP_DAILY` | `7` | retention |
-| `BACKUP_KEEP_WEEKLY` | `4` | retention |
-| `BACKUP_KEEP_MONTHLY` | `6` | retention |
-| `BACKUP_KEEP_YEARLY` | `2` | retention |
-| `BACKUP_HEALTHCHECK_URL` | unset | pinged on success, `/fail` on failure |
-| `BACKUP_ALIVE_MAX_AGE` | `2` | minutes without a scheduler heartbeat before unhealthy |
-| `BACKUP_HEALTH_MAX_AGE` | `11520` | minutes since the last successful run before unhealthy |
-| `BACKUP_SITE` | `writefreely` | a restic tag, so one repository can hold several sites |
-| `BACKUP_HOST` | the container hostname | the restic host, used for retention grouping |
-| `RESTIC_CACHE_DIR` | restic's default | point it at a volume, or every prune re-downloads the index |
-| `APP_URL` | `http://app:8080/` | where the restore checks whether the application is running |
-| `PUID`, `PGID` | `1000` | ownership of everything a restore writes |
-
-There are no database variables. Those come from `config.ini`.
+The full reference, including every environment variable and how to add another database engine, is in the [writefreely-backup README](https://github.com/josephquigley/writefreely-backup#readme).

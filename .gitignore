@@ -18,6 +18,3 @@ static/uploads
 /data
 /dbdata
 /uploads
-
-# Restore staging, created by the backup sidecar.
-/data-restore
