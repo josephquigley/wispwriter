@@ -96,6 +96,9 @@ Three kinds of image tag are published:
 A series tag such as `0.18-wisp` is the usual choice for a deployment: patch
 releases arrive on a `docker compose pull`, while a `0.19` would not.
 
+Putting the instance behind Cloudflare needs cache rules that account for the
+session cookie the index sets on every request; see [cloudflare.md](cloudflare.md).
+
 ## File ownership
 
 Both containers run as `PUID`:`PGID` from `.env`, which default to
