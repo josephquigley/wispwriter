@@ -74,29 +74,8 @@
 		</header>
 
 		<script src="/js/h.js"></script>
-		<script>
-		function toggleTheme() {
-			var btns = Array.prototype.slice.call(document.getElementById('tools').querySelectorAll('a img'));
-			var newTheme = '';
-			if (document.body.classList.contains('light')) {
-				newTheme = 'dark';
-				document.body.className = document.body.className.replace(/(?:^|\s)light(?!\S)/g, newTheme);
-				for (var i=0; i<btns.length; i++) {
-					btns[i].src = btns[i].src.replace('_dark@2x.png', '@2x.png');
-				}
-			} else {
-				newTheme = 'light';
-				document.body.className = document.body.className.replace(/(?:^|\s)dark(?!\S)/g, newTheme);
-				for (var i=0; i<btns.length; i++) {
-					btns[i].src = btns[i].src.replace('@2x.png', '_dark@2x.png');
-				}
-			}
-			H.set('padTheme', newTheme);
-		}
-		if (H.get('padTheme', 'light') != 'light') {
-			toggleTheme();
-		}
-		var $title = H.getEl('title');
+		<script src="/js/theme.js"></script>
+		<script>		var $title = H.getEl('title');
 		var $writer = H.getQEl('div.ProseMirror');
 		var $content = H.getEl('content');
 		var $btnPublish = H.getEl('publish');
@@ -291,15 +270,6 @@
 				var content = $content.el.value;
 				publish(title, content, selectedFont);
 			}
-		});
-
-		H.getEl('toggle-theme').on('click', function(e) {
-			e.preventDefault();
-			var newTheme = 'light';
-			if (document.body.className == 'light') {
-				newTheme = 'dark';
-			}
-			toggleTheme();
 		});
 
 		var targets = document.querySelectorAll('#target li.target a');
