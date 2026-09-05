@@ -138,5 +138,67 @@
 		.subtitle, .description, .meta, .disabled {
 			color: @darkMutedTextColor;
 		}
+
+		// Chrome that paints its own background and border, rather than
+		// inheriting the page's. Recolouring the text alone leaves these
+		// sitting on light panels, which is what the first pass did.
+
+		// .pager is both the admin section's button bar (nav#admin.pager,
+		// the Dashboard/Settings/Posts row) and the pagination on the post,
+		// user and subscriber lists. One rule, because admin.less styles
+		// them with one rule.
+		.pager a {
+			color: @darkLinkColor;
+			border-color: @darkNavBorder;
+
+			&:hover {
+				background: @darkNavHoverBG;
+				color: @darkTextColor;
+			}
+			&.selected {
+				background: @darkNavBG;
+				color: @darkTextColor;
+			}
+		}
+
+		// The standalone pager button, which core.less styles off the light
+		// nav variables directly.
+		.btn.pager {
+			border-color: @darkNavBorder;
+
+			&:hover {
+				background: @darkNavHoverBG;
+			}
+		}
+
+		// The account drop-down in the /me header. The panel is a positioned
+		// ul with its own white background, so it stays a white card over a
+		// dark page until it is told otherwise.
+		.dropdown-nav {
+			ul ul {
+				background: @darkNavBG;
+				border-color: @darkNavBorder;
+			}
+			a {
+				color: @darkTextColor;
+			}
+			li {
+				&:hover {
+					background: @darkNavHoverBG;
+				}
+				&.selected a, &.selected a:hover {
+					color: @darkMutedTextColor;
+				}
+				&.current-user {
+					color: @darkTextColor;
+				}
+				&.menu-heading {
+					color: @darkMutedTextColor;
+				}
+				hr {
+					border-color: @darkNavBorder;
+				}
+			}
+		}
 	}
 }
