@@ -70,8 +70,18 @@ services:
 
     # This image ships mariadb-admin, not the official image's
     # healthcheck.sh, so the check is written against what is actually here.
+    #
+    # The ping carries no credentials, because they never affected its
+    # result: mariadb-admin ping reports whether the server answered, so
+    # an access denied still exits 0 and a wrong password passes the
+    # check exactly as the right one does. What the credentials did do
+    # was put the password on a command line every ten seconds, where
+    # anything reading /proc on the host can see it, and keep the value
+    # in this container's environment where docker inspect prints it.
+    # Leaving them out is what allows the password to be passed as a
+    # file instead.
     healthcheck:
-      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u writefreely -p\"$$MYSQL_PASSWORD\" --silent"]
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 --silent"]
       interval: 10s
       timeout: 5s
       retries: 18
