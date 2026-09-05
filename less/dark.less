@@ -171,6 +171,25 @@
 			}
 		}
 
+		// The blog list on /me/c/. core.less reaches these through
+		// `#official-writing ul.collections li.collection a.title`, an id and
+		// four classes deep, so the generic link rule above cannot outweigh
+		// it: the blog names stayed black on the dark page. Matching that
+		// path under the body id is what it takes to win, which is the cost
+		// of overriding rather than tokenising.
+		#official-writing, #wrapper {
+			ul.collections li {
+				&.collection a.title {
+					&:link, &:visited {
+						color: @darkTextColor;
+					}
+				}
+				a.create {
+					color: @darkLinkColor;
+				}
+			}
+		}
+
 		// The account drop-down in the /me header. The panel is a positioned
 		// ul with its own white background, so it stays a white card over a
 		// dark page until it is told otherwise.
