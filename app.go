@@ -70,7 +70,7 @@ var (
 	debugging bool
 
 	// Software version can be set from git env using -ldflags
-	softwareVer = "0.18.1"
+	softwareVer = "0.18.2"
 
 	// DEPRECATED VARS
 	isSingleUser bool
