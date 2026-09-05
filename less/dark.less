@@ -56,7 +56,10 @@
 			}
 		}
 
+		// hr is drawn as a 1px block with a background, so recolouring the
+		// border alone leaves a bright #ccc line across a dark page.
 		hr {
+			background: @darkNavBorder;
 			border-color: @darkNavBorder;
 		}
 
@@ -169,6 +172,92 @@
 			&:hover {
 				background: @darkNavHoverBG;
 			}
+		}
+
+		// Components below were found by compiling the stylesheet and
+		// comparing every light-mode rule's specificity against this block's,
+		// filtered to selectors that actually match the rendered app pages.
+		// Recolouring by eye missed all of them.
+
+		// core.less gives these the default browser link blue (#0000ee) at
+		// body#me #official-writing h2 a, which this matches exactly and
+		// beats on order alone, since dark.less is imported last.
+		#official-writing h2 {
+			a:link, a:visited {
+				color: @darkLinkColor;
+			}
+		}
+
+		// Row actions in the post and blog lists.
+		.atoms a.action {
+			color: @darkLinkColor;
+
+			&:hover {
+				color: @darkTextColor;
+			}
+		}
+
+		// Breadcrumb above a blog's settings, stats and subscribers.
+		#org-nav {
+			color: @darkMutedTextColor;
+
+			em, strong {
+				color: @darkTextColor;
+			}
+			a:link, a:visited, a:hover {
+				color: @darkLinkColor;
+			}
+		}
+
+		// Blog settings. The help text under a disabled option is #555,
+		// which is darker than the page it sits on.
+		#collection-options {
+			.option label.option-text.disabled + p {
+				color: @darkMutedTextColor;
+			}
+			#add-verification, .remove-verification {
+				color: lighten(@primary, 15%);
+			}
+		}
+
+		// Explanatory columns on the sign-in, reset and invite pages.
+		div.blurbs .half {
+			p, ul {
+				color: @darkTextColor;
+			}
+		}
+
+		.contain-me {
+			h2 + p, h2 + p + p {
+				color: @darkTextColor;
+			}
+		}
+
+		.features div p, p.text-cta + p {
+			color: @darkMutedTextColor;
+		}
+
+		// @dangerCol is #e21d27, which lands at 3.36:1 on this background
+		// and fails AA for body text. It labels destructive actions, so
+		// legibility is not optional: lightened it reaches 5.2:1 and still
+		// reads as the same red.
+		a.danger {
+			color: lighten(@dangerCol, 20%);
+		}
+
+		// Confirmation dialogs, which are cards with their own background.
+		.modal {
+			background: @darkNavBG;
+			border-color: @darkNavBorder;
+		}
+
+		// .alert.danger sets a white background and no colour of its own, so
+		// on a dark page it inherited white text onto white: invisible rather
+		// than merely low contrast. The other alert variants set both, and
+		// are self-consistent already.
+		.alert.danger {
+			background-color: @darkNavBG;
+			color: @darkTextColor;
 		}
 
 		// The blog list on /me/c/. core.less reaches these through
