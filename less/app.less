@@ -11,3 +11,7 @@
 @import "resources";
 @import "lib/elements";
 @import "lib/material";
+// Last, so its scoped overrides win over the light rules above without
+// needing extra weight to do it. See the file for why it is an override
+// layer rather than a palette refactor.
+@import "dark";
