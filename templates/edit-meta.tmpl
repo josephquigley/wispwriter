@@ -278,6 +278,7 @@
 		</div>
 
 		<script src="/js/h.js"></script>
+		<script src="/js/theme.js"></script>
 		<script>
 function updateMeta() {
 	if ({{.Silenced}}) {
@@ -316,25 +317,6 @@ H.getEl('set-now').on('click', function(e) {
 	e.preventDefault();
 	setToNow();
 });
-		function toggleTheme() {
-			var btns = Array.prototype.slice.call(document.getElementById('tools').querySelectorAll('a img'));
-			if (document.body.className == 'light') {
-				document.body.className = 'dark';
-				for (var i=0; i<btns.length; i++) {
-					btns[i].src = btns[i].src.replace('_dark@2x.png', '@2x.png');
-				}
-			} else {
-				document.body.className = 'light';
-				for (var i=0; i<btns.length; i++) {
-					btns[i].src = btns[i].src.replace('@2x.png', '_dark@2x.png');
-				}
-			}
-			H.set('padTheme', document.body.className);
-		}
-		if (H.get('padTheme', 'light') != 'light') {
-			toggleTheme();
-		}
-
 		var setButtonStates = function() {
 			if (!canPublish) {
 				$btnPublish.el.className = 'disabled';
@@ -346,17 +328,6 @@ H.getEl('set-now').on('click', function(e) {
 				$btnPublish.el.className = '';
 			}
 		};
-
-		H.getEl('toggle-theme').on('click', function(e) {
-			e.preventDefault();
-			try {
-				var newTheme = 'light';
-				if (document.body.className == 'light') {
-					newTheme = 'dark';
-				}
-			} catch(e) {}
-			toggleTheme();
-		});
 
 		WebFontConfig = {
 			custom: { families: [ 'Lora:400,700:latin' ], urls: [ '/css/fonts.css' ] }
