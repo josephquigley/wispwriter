@@ -1278,8 +1278,35 @@ func (p *PublicPost) ActivityObject(app *App) *activitystreams.Object {
 	o.Published = p.Created
 	o.URL = p.CanonicalURL(cfg.App.Host)
 	o.AttributedTo = p.Collection.FederatedAccount()
-	o.CC = []string{
-		p.Collection.FederatedAccount() + "/followers",
+
+	// Addressing reflects the collection's visibility, because addressing is
+	// the only way a peer can learn it. Before this, every post was addressed
+	// to the Public collection at every visibility, so an unlisted blog
+	// federated byte-identically to a public one and appeared on remote public
+	// timelines — the opposite of what "unlisted" means in the web UI.
+	//
+	// An unlisted blog must carry the Public collection in NEITHER field.
+	// Receivers merge `to` and `cc` before looking for it (Mbin's
+	// containsPublicTarget does exactly that, and Mastodon's "unlisted" is
+	// precisely Public-moved-into-cc), so leaving it in `cc` would still read
+	// as fully public and defeat this entirely.
+	//
+	// THE FOLLOWERS COLLECTION MUST BE IN `to`, NOT `cc`, AND THAT IS NOT A
+	// STYLE CHOICE: federatePost overwrites o.CC with the individual follower
+	// actor IDs for each shared inbox before delivery, so anything left in
+	// `cc` here never arrives. A receiver deciding "followers-only" looks for
+	// the actor's own followers URL, which would be gone.
+	//
+	// Private and protected collections never reach this branch — federatePost
+	// returns before calling this, and the outbox and actor handlers refuse
+	// them outright.
+	followers := p.Collection.FederatedAccount() + "/followers"
+	if p.Collection.IsPublic() {
+		o.To = []string{activitystreams.ToPublic}
+		o.CC = []string{followers}
+	} else {
+		o.To = []string{followers}
+		o.CC = nil
 	}
 	o.Name = p.PlainDisplayTitle()
 	p.augmentContent()
