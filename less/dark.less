@@ -33,6 +33,18 @@
 @darkInputBG: #2b2b2b;
 @darkCodeBG: #2b2b2b;
 
+// Syntax colours for the Ace editor behind the Custom CSS box. Ace ships one
+// theme in this repository (chrome), written for a white page, and a dark one
+// would be a new vendored file. These replace its token colours instead. Each
+// clears 4.5:1 against @darkCodeBG, which chrome's own greens and blues miss
+// by a wide margin once the editor is dark.
+@darkSyntaxComment: #8fbc8f;
+@darkSyntaxKeyword: #e39ec1;
+@darkSyntaxString: #ce9178;
+@darkSyntaxNumeric: #b5cea8;
+@darkSyntaxSupport: #9cdcfe;
+@darkSyntaxName: #dcdcaa;
+
 @media (prefers-color-scheme: dark) {
 	body#me, body#login {
 		// Tells the browser to render form controls, scrollbars and the
@@ -307,6 +319,90 @@
 					border-color: @darkNavBorder;
 				}
 			}
+		}
+
+		// The Custom CSS box on a blog's settings page. Ace replaces the
+		// textarea it is handed with a <pre>, so the `pre, code` rule above
+		// paints the editor's background dark, and Ace's light theme carries
+		// on painting the gutter and the syntax colours for a white page.
+		// That split is the bug: a light gutter beside a dark editor, and
+		// comment green and string blue sitting at about 2:1 on it.
+		//
+		// `body#me .ace_editor .ace_comment` outweighs the theme's
+		// `.ace-chrome .ace_comment`, so these win whichever theme Ace has
+		// loaded, including the textmate fallback bundled in ace.js.
+		.ace_editor {
+			background-color: @darkCodeBG;
+			border-color: @darkNavBorder;
+			color: @darkTextColor;
+
+			.ace_gutter {
+				background: @darkNavBG;
+				color: @darkMutedTextColor;
+			}
+			.ace_gutter-active-line {
+				background-color: @darkNavHoverBG;
+			}
+			.ace_cursor {
+				color: @darkTextColor;
+			}
+			.ace_marker-layer {
+				// Both of these are painted for a white page: a 7% black wash
+				// for the active line, which is invisible here, and a pale
+				// blue selection that hides white text.
+				.ace_active-line {
+					background: rgba(255, 255, 255, 0.06);
+				}
+				.ace_selection, .ace_selected-word {
+					background: @darkNavHoverBG;
+					border-color: @darkNavHoverBG;
+				}
+				.ace_bracket {
+					border-color: @darkMutedTextColor;
+				}
+			}
+
+			.ace_comment, .ace_comment.ace_doc, .ace_comment.ace_doc.ace_tag {
+				color: @darkSyntaxComment;
+			}
+			.ace_keyword, .ace_storage, .ace_meta.ace_tag {
+				color: @darkSyntaxKeyword;
+			}
+			.ace_keyword.ace_operator {
+				color: @darkTextColor;
+			}
+			.ace_string {
+				color: @darkSyntaxString;
+			}
+			.ace_string.ace_regex {
+				color: @darkSyntaxNumeric;
+			}
+			.ace_constant.ace_numeric, .ace_constant.ace_language,
+			.ace_constant.ace_buildin, .ace_constant.ace_library {
+				color: @darkSyntaxNumeric;
+			}
+			.ace_support.ace_type, .ace_support.ace_class,
+			.ace_support.ace_constant, .ace_support.ace_function,
+			.ace_support.ace_other, .ace_variable, .ace_variable.ace_parameter {
+				color: @darkSyntaxSupport;
+			}
+			.ace_entity.ace_name.ace_function,
+			.ace_entity.ace_other.ace_attribute-name {
+				color: @darkSyntaxName;
+			}
+		}
+
+		// The popup a gutter annotation opens, which is where the CSS
+		// validator reports what it does not understand. Ace gives it a white
+		// card and black text, and `color-scheme: dark` alone does not touch
+		// either, so the message arrived unreadable on this page.
+		.ace_tooltip {
+			background-color: @darkNavBG;
+			background-image: none;
+			// A @darkNavBorder edge is all but invisible between this panel
+			// and the editor behind it, which are only 14 points apart.
+			border-color: @darkNavHoverBG;
+			color: @darkTextColor;
 		}
 	}
 }
