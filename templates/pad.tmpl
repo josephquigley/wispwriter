@@ -78,53 +78,12 @@
 {{end}}		<script src="/js/h.js"></script>
 		<script src="/js/modals.js"></script>
 		<script type="text/javascript" src="/js/menu.js"></script>
+		<script src="/js/theme.js"></script>
 		<script>
-		function toggleTheme() {
-			if (document.body.classList.contains('light')) {
-				setTheme('dark');
-			} else {
-				setTheme('light');
-			}
-			H.set('padTheme', newTheme);
-		}
-
         H.getEl('toggle-preview').on('click', function(e) {
             e.preventDefault();
             togglePreview();
         });
-
-		function setTheme(newTheme) {
-			document.body.classList.remove('light');
-			document.body.classList.remove('dark');
-			document.body.classList.add(newTheme);
-			var btns = Array.prototype.slice.call(document.getElementById('tools').querySelectorAll('a img'));
-			if (newTheme == 'light') {
-				// check if current theme is dark otherwise we'll get `_dark_dark@2x.png`
-				if (H.get('padTheme', 'auto') == 'dark'){
-					for (var i=0; i<btns.length; i++) {
-						btns[i].src = btns[i].src.replace('@2x.png', '_dark@2x.png');
-					}
-				}
-			} else {
-				for (var i=0; i<btns.length; i++) {
-					btns[i].src = btns[i].src.replace('_dark@2x.png', '@2x.png');
-				}
-			}
-			H.set('padTheme', newTheme);
-		}
-
-		if (H.get('padTheme', 'auto') == 'light') {
-			setTheme('light');
-		} else if (H.get('padTheme', 'auto') == 'dark') {
-			setTheme('dark');
-		} else {
-			const isDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches
-			if (isDarkMode) {
-				setTheme('dark');
-			} else {
-				setTheme('light');
-			}
-		}
 
 		var $writer = H.getEl('writer');
 		var $btnPublish = H.getEl('publish');
@@ -318,15 +277,6 @@
 			H.remove(draftDoc+'-published');
 			justPublished = true; // Block auto-save
 			location.reload();
-		});
-
-		H.getEl('toggle-theme').on('click', function(e) {
-			e.preventDefault();
-			var newTheme = 'light';
-			if (document.body.className == 'light') {
-				newTheme = 'dark';
-			}
-			toggleTheme();
 		});
 
 		var targets = document.querySelectorAll('#target li.target a');

@@ -763,8 +763,9 @@ func handleFetchCollectionInbox(app *App, w http.ResponseWriter, r *http.Request
 // web-core's DecodePrivateKey tests whether pem.Decode returned a nil block and
 // then dereferences that same nil block while formatting the error, so an actor
 // whose keypair was never generated panics its caller instead of receiving an
-// error. Key generation shells out to openssl and can genuinely fail, so an
-// actor without a keypair is a reachable state rather than a theoretical one.
+// error. Key generation can still fail, and an instance that ran a build whose
+// generation was broken carries actors with no stored keypair, so an actor
+// without a keypair is a reachable state rather than a theoretical one.
 func actorPrivKey(p *activitystreams.Person) (crypto.PrivateKey, error) {
 	k := p.GetPrivKey()
 	if len(k) == 0 {

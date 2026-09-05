@@ -1,0 +1,312 @@
+// Dark mode for the application surfaces: everything under /me, the admin
+// section, and the sign-in and password-reset pages.
+//
+// WHY THIS IS A SCOPED OVERRIDE AND NOT A PALETTE REFACTOR
+//
+// The tidier way to do this is to replace the hardcoded colours in core.less
+// with variables (or custom properties) and give them a light and a dark
+// value. That would share one palette between both schemes instead of
+// restating it, and it would let a blog's own Custom CSS retheme by
+// reassigning a few tokens rather than redeclaring every rule.
+//
+// This does not do that, for one reason: core.less is shared with the
+// published blog pages. Tokenising it would change how readers see every
+// collection on the instance. Whether an author's own tools follow their
+// desktop and what a stranger sees when they open someone's blog are two
+// different decisions, and only the first one is being made here. Making
+// the second one silently, as a side effect, would be worse than the
+// duplication below.
+//
+// So these rules are additive. They are scoped to the two body ids that
+// identify the application surfaces, and never to a bare `body`, which
+// would leak onto the Reader (read.tmpl sets id="collection") and onto
+// published blogs. If a third app surface appears, add its id here rather
+// than widening the selector.
+//
+// The palette is pad-theme.less's own, referenced rather than copied. A
+// writer moving from the editor to their post list should not cross a seam
+// between two different darks, and one definition cannot drift from itself.
+
+// Derived from the pad palette above; these have no pad equivalent because
+// the editor has no tables, form sections or muted secondary text.
+@darkMutedTextColor: #999;
+@darkInputBG: #2b2b2b;
+@darkCodeBG: #2b2b2b;
+
+@media (prefers-color-scheme: dark) {
+	body#me, body#login {
+		// Tells the browser to render form controls, scrollbars and the
+		// canvas dark too. Without it the widgets stay light and sit on the
+		// page like cut-outs.
+		color-scheme: dark;
+
+		background-color: @darkBG;
+		color: @darkTextColor;
+
+		h1, h2, h3, h4, h5, h6 {
+			color: @darkTextColor;
+		}
+
+		a {
+			&:link, &:visited {
+				color: @darkLinkColor;
+			}
+			&:hover {
+				color: @darkTextColor;
+			}
+		}
+
+		// hr is drawn as a 1px block with a background, so recolouring the
+		// border alone leaves a bright #ccc line across a dark page.
+		hr {
+			background: @darkNavBorder;
+			border-color: @darkNavBorder;
+		}
+
+		// Navigation: the /me header, the admin pager, and the footer.
+		nav {
+			a {
+				&:link, &:visited {
+					color: @darkLinkColor;
+				}
+				&:hover {
+					color: @darkTextColor;
+				}
+				&.selected {
+					color: @darkTextColor;
+				}
+			}
+		}
+
+		header {
+			&.admin {
+				h1 {
+					color: @darkTextColor;
+				}
+			}
+		}
+
+		footer nav {
+			color: @darkMutedTextColor;
+
+			a {
+				&:link, &:visited {
+					color: @darkMutedTextColor;
+				}
+				&:hover, &.home {
+					color: @darkTextColor;
+				}
+			}
+		}
+
+		// Form controls. `color-scheme` above handles the browser's own
+		// widget chrome; these are the ones the stylesheet paints itself.
+		input[type="text"], input[type="email"], input[type="password"],
+		input[type="url"], input[type="search"], input[type="number"],
+		textarea, select {
+			background-color: @darkInputBG;
+			border-color: @darkNavBorder;
+			color: @darkTextColor;
+
+			&::placeholder {
+				color: @darkMutedTextColor;
+			}
+		}
+
+		textarea.section {
+			border-color: @darkNavBorder;
+		}
+
+		// Tables: the post list, the export list, the admin user and page
+		// listings.
+		table.classy {
+			tr + tr {
+				border-top-color: @darkNavBorder;
+			}
+			&.export .disabled {
+				color: @darkMutedTextColor;
+			}
+		}
+
+		// Code shown in the app rather than in a post: the config snippets
+		// on the admin pages, and anything a user pastes into a form.
+		pre, code {
+			background-color: @darkCodeBG;
+			border-color: @darkNavBorder;
+			color: @darkTextColor;
+		}
+
+		// Secondary text the light theme greys out. Left as one rule
+		// because every one of these is the same intent: de-emphasised.
+		.subtitle, .description, .meta, .disabled {
+			color: @darkMutedTextColor;
+		}
+
+		// Chrome that paints its own background and border, rather than
+		// inheriting the page's. Recolouring the text alone leaves these
+		// sitting on light panels, which is what the first pass did.
+
+		// .pager is both the admin section's button bar (nav#admin.pager,
+		// the Dashboard/Settings/Posts row) and the pagination on the post,
+		// user and subscriber lists. One rule, because admin.less styles
+		// them with one rule.
+		.pager a {
+			color: @darkLinkColor;
+			border-color: @darkNavBorder;
+
+			&:hover {
+				background: @darkNavHoverBG;
+				color: @darkTextColor;
+			}
+			&.selected {
+				background: @darkNavBG;
+				color: @darkTextColor;
+			}
+		}
+
+		// The standalone pager button, which core.less styles off the light
+		// nav variables directly.
+		.btn.pager {
+			border-color: @darkNavBorder;
+
+			&:hover {
+				background: @darkNavHoverBG;
+			}
+		}
+
+		// Components below were found by compiling the stylesheet and
+		// comparing every light-mode rule's specificity against this block's,
+		// filtered to selectors that actually match the rendered app pages.
+		// Recolouring by eye missed all of them.
+
+		// core.less gives these the default browser link blue (#0000ee) at
+		// body#me #official-writing h2 a, which this matches exactly and
+		// beats on order alone, since dark.less is imported last.
+		#official-writing h2 {
+			a:link, a:visited {
+				color: @darkLinkColor;
+			}
+		}
+
+		// Row actions in the post and blog lists.
+		.atoms a.action {
+			color: @darkLinkColor;
+
+			&:hover {
+				color: @darkTextColor;
+			}
+		}
+
+		// Breadcrumb above a blog's settings, stats and subscribers.
+		#org-nav {
+			color: @darkMutedTextColor;
+
+			em, strong {
+				color: @darkTextColor;
+			}
+			a:link, a:visited, a:hover {
+				color: @darkLinkColor;
+			}
+		}
+
+		// Blog settings. The help text under a disabled option is #555,
+		// which is darker than the page it sits on.
+		#collection-options {
+			.option label.option-text.disabled + p {
+				color: @darkMutedTextColor;
+			}
+			#add-verification, .remove-verification {
+				color: lighten(@primary, 15%);
+			}
+		}
+
+		// Explanatory columns on the sign-in, reset and invite pages.
+		div.blurbs .half {
+			p, ul {
+				color: @darkTextColor;
+			}
+		}
+
+		.contain-me {
+			h2 + p, h2 + p + p {
+				color: @darkTextColor;
+			}
+		}
+
+		.features div p, p.text-cta + p {
+			color: @darkMutedTextColor;
+		}
+
+		// @dangerCol is #e21d27, which lands at 3.36:1 on this background
+		// and fails AA for body text. It labels destructive actions, so
+		// legibility is not optional: lightened it reaches 5.2:1 and still
+		// reads as the same red.
+		a.danger {
+			color: lighten(@dangerCol, 20%);
+		}
+
+		// Confirmation dialogs, which are cards with their own background.
+		.modal {
+			background: @darkNavBG;
+			border-color: @darkNavBorder;
+		}
+
+		// .alert.danger sets a white background and no colour of its own, so
+		// on a dark page it inherited white text onto white: invisible rather
+		// than merely low contrast. The other alert variants set both, and
+		// are self-consistent already.
+		.alert.danger {
+			background-color: @darkNavBG;
+			color: @darkTextColor;
+		}
+
+		// The blog list on /me/c/. core.less reaches these through
+		// `#official-writing ul.collections li.collection a.title`, an id and
+		// four classes deep, so the generic link rule above cannot outweigh
+		// it: the blog names stayed black on the dark page. Matching that
+		// path under the body id is what it takes to win, which is the cost
+		// of overriding rather than tokenising.
+		#official-writing, #wrapper {
+			ul.collections li {
+				&.collection a.title {
+					&:link, &:visited {
+						color: @darkTextColor;
+					}
+				}
+				a.create {
+					color: @darkLinkColor;
+				}
+			}
+		}
+
+		// The account drop-down in the /me header. The panel is a positioned
+		// ul with its own white background, so it stays a white card over a
+		// dark page until it is told otherwise.
+		.dropdown-nav {
+			ul ul {
+				background: @darkNavBG;
+				border-color: @darkNavBorder;
+			}
+			a {
+				color: @darkTextColor;
+			}
+			li {
+				&:hover {
+					background: @darkNavHoverBG;
+				}
+				&.selected a, &.selected a:hover {
+					color: @darkMutedTextColor;
+				}
+				&.current-user {
+					color: @darkTextColor;
+				}
+				&.menu-heading {
+					color: @darkMutedTextColor;
+				}
+				hr {
+					border-color: @darkNavBorder;
+				}
+			}
+		}
+	}
+}

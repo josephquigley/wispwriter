@@ -32,7 +32,6 @@ import (
 	uuid "github.com/nu7hatch/gouuid"
 	"github.com/writeas/activityserve"
 	"github.com/writeas/impart"
-	"github.com/writeas/web-core/activitypub"
 	"github.com/writeas/web-core/auth"
 	"github.com/writeas/web-core/data"
 	"github.com/writeas/web-core/id"
@@ -2774,7 +2773,15 @@ func (db *datastore) GetAPActorKeys(collectionID int64) ([]byte, []byte) {
 	switch {
 	case err == sql.ErrNoRows:
 		// Generate keys
-		pub, priv = activitypub.GenerateKeys()
+		pub, priv, err = generateAPKeys()
+		if err != nil {
+			// Returning here rather than falling through to the INSERT keeps
+			// the real reason in the log. Storing an empty keypair fails on
+			// the NOT NULL constraint instead, which reports the column and
+			// not the cause.
+			log.Error("Unable to generate activitypub keypair: %v", err)
+			return nil, nil
+		}
 		_, err = db.Exec("INSERT INTO collectionkeys (collection_id, public_key, private_key) VALUES (?, ?, ?)", collectionID, pub, priv)
 		if err != nil {
 			log.Error("Unable to INSERT new activitypub keypair: %v", err)
